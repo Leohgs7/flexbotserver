@@ -9,11 +9,7 @@ const app = express();
 const port = 3001;
 
 // Middleware para permitir requisições do frontend
-app.use(cors({
-    origin: 'https://flexbotserver.onrender.com',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
-}));
+app.use(cors());
 app.use(express.json());
 
 // Endpoint para testar a conexão
