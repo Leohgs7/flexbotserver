@@ -16,6 +16,8 @@ app.use(express.json());
 app.post('/api/test-connection', async (req, res) => {
     const { user, host, database, password, port } = req.body;
 
+    console.log('Credenciais recebidas:', { user, host, database, port }); // Log das credenciais
+
     const tempClient = new Client({
         user,
         host,
@@ -25,10 +27,13 @@ app.post('/api/test-connection', async (req, res) => {
     });
 
     try {
+        console.log('Tentando conectar ao banco de dados...'); // Log de tentativa de conexão
         await tempClient.connect();
+        console.log('Conexão bem-sucedida!'); // Log de sucesso
         await tempClient.end();
         res.json({ success: true, message: 'Conexão bem-sucedida!' });
     } catch (error) {
+        console.error('Erro ao conectar ao banco de dados:', error); // Log de erro
         res.status(500).json({ success: false, message: error.message });
     }
 });
