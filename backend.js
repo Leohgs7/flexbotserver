@@ -24,6 +24,9 @@ app.post('/api/test-connection', async (req, res) => {
         database,
         password,
         port,
+        ssl: {
+        rejectUnauthorized: false, // Ignora a validação do certificado SSL
+    },
     });
 
     try {
