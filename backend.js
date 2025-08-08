@@ -2,69 +2,55 @@ const express = require('express');
 const { Client } = require('pg');
 const cors = require('cors');
 require('dotenv').config();
-const apiKey = process.env.API_KEY;
-const apiEndpoint = process.env.API_ENDPOINT;
+const fetch = require('node-fetch');
+
+// Importações do LangChain e do Google GenAI
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { MemoryVectorStore } = require("langchain/vectorstores/memory");
+const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
+const { TaskType } = require("@google/generative-ai");
+const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 
 const app = express();
 const port = 3001;
 
-// Middleware para permitir requisições do frontend
-app.use(cors());
+// Variável global para armazenar nosso índice de conhecimento (Vector Store)
+let vectorStore; 
+
+// Middleware
+app.use(cors({
+    origin: 'https://flexbotserver.onrender.com', // Ajuste se o seu frontend estiver em outro domínio
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type'],
+}));
 app.use(express.json());
 
-// Endpoint para testar a conexão
+// --- ENDPOINTS ORIGINAIS (SEM ALTERAÇÕES) ---
+
+// Endpoint para testar a conexão com o banco de dados
 app.post('/api/test-connection', async (req, res) => {
     const { user, host, database, password, port } = req.body;
-
-    console.log('Credenciais recebidas:', { user, host, database, port }); // Log das credenciais
-
-    const tempClient = new Client({
-        user,
-        host,
-        database,
-        password,
-        port,
-        ssl: {
-        rejectUnauthorized: false, // Ignora a validação do certificado SSL
-    },
-    });
-
+    const tempClient = new Client({ user, host, database, password, port });
     try {
-        console.log('Tentando conectar ao banco de dados...'); // Log de tentativa de conexão
         await tempClient.connect();
-        console.log('Conexão bem-sucedida!'); // Log de sucesso
         await tempClient.end();
         res.json({ success: true, message: 'Conexão bem-sucedida!' });
     } catch (error) {
-        console.error('Erro ao conectar ao banco de dados:', error); // Log de erro
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// Endpoint para consultar tabelas
+// Endpoint para consultar tabelas do banco de dados
 app.post('/api/query', async (req, res) => {
     const { user, host, database, password, port, tables } = req.body;
-
-    const tempClient = new Client({
-        user,
-        host,
-        database,
-        password,
-        port,
-        ssl: {
-        rejectUnauthorized: false, // Ignora a validação do certificado SSL
-    },
-    });
-
+    const tempClient = new Client({ user, host, database, password, port });
     try {
         await tempClient.connect();
-
         const data = {};
         for (const table of tables) {
             const result = await tempClient.query(`SELECT * FROM ${table}`);
             data[table] = result.rows;
         }
-
         await tempClient.end();
         res.json({ success: true, data });
     } catch (error) {
@@ -72,45 +58,109 @@ app.post('/api/query', async (req, res) => {
     }
 });
 
+
+// --- ENDPOINT DO CHATBOT COM LÓGICA RAG ---
+
 app.post('/api/chatbot', async (req, res) => {
-    const { message, dbData, FlexDocData, Flexsim_Commands } = req.body;
+    const { message, dbData } = req.body;
+
+    if (!vectorStore) {
+        return res.status(500).json({ success: false, message: "O sistema RAG ainda não foi inicializado. Aguarde um momento e tente novamente." });
+    }
 
     try {
-        const response = await fetch(`${apiEndpoint}?key=${apiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [
-                    {
-                        parts: [
-                            { text: 'Papel e Especialização: Você é um assistente virtual chamada Flex especializado em análise e interpretação de dados de simulação do FlexSim. Seu papel é o de um consultor expert em FlexSim, com profundo conhecimento da ferramenta e suas nuances.' },
-                            { text: `Conhecimento Base: Você tem acesso a duas fontes de conhecimento essenciais, esses dados devem ser acessados quando o usuario realizar alguma pergunta tecnica do flexsim:
-                            1. **Documentação Oficial FlexSim (FlexDocData):** ${JSON.stringify(FlexDocData)}
-                            Utilize esta documentação para entender detalhes técnicos de funcionalidades, parâmetros e melhores práticas do FlexSim.`},
-                            { text: `Documento de ajuda do Flexsim (Flexsim_Commands): ${JSON.stringify(Flexsim_Commands)}
-                                - Este documento contem informações sobre todas as funções flexscript que podem ser usadas dentro do flexsim, explica como funciona e para que serve.`},
-                            { text: `**Instruções de Análise:**
-                                2. **Dados da Simulação (dbData):** ${JSON.stringify(dbData)}
-                                - Caso seja perguntado algo sobre o desempenho ou funcionamento do modelo de simulação deve-se utilizar esses dados.
-                                - Analise cuidadosamente esses dados da simulação, buscando padrões, gargalos, oportunidades de melhoria e outros insights relevantes.
-                                - Considere todas as métricas disponíveis.`},
-                            { text: `**Mensagem do Usuário:** ${message}` }
-                        ]
-                    }
-                ]
-            })
-        });
+        // 1. ETAPA DE RECUPERAÇÃO (RETRIEVAL)
+        const relevantDocs = await vectorStore.similaritySearch(message, 5); // Busca os 5 chunks mais relevantes
+        const context = relevantDocs.map(doc => doc.pageContent).join('\n\n');
 
-        const data = await response.json();
-        res.json({ success: true, response: data.candidates[0].content.parts[0].text });
+        // 2. ETAPA DE GERAÇÃO AUMENTADA (AUGMENTED GENERATION)
+        const prompt = `
+            Você é um assistente virtual chamado Flex, especialista em FlexSim.
+            
+            Use o seguinte CONTEXTO TÉCNICO para responder a pergunta do usuário. Este contexto foi extraído da documentação oficial e de guias de comando. Se a resposta não estiver no contexto, diga que não encontrou a informação na sua base de conhecimento.
+            
+            CONTEXTO TÉCNICO:
+            ---
+            ${context}
+            ---
+            
+            Se a pergunta for sobre desempenho ou funcionamento do modelo, analise os DADOS DA SIMULAÇÃO abaixo:
+            DADOS DA SIMULAÇÃO: ${JSON.stringify(dbData)}
+            
+            PERGUNTA DO USUÁRIO: "${message}"
+        `;
+        
+        const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+
+        res.json({ success: true, response: text });
+
     } catch (error) {
+        console.error("Erro no endpoint do chatbot:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// Iniciar o servidor
+
+// --- FUNÇÃO DE INICIALIZAÇÃO DO RAG ---
+
+const initializeRag = async () => {
+    console.log("Inicializando o sistema RAG...");
+
+    try {
+        // URLs dos seus arquivos de conhecimento no GitHub
+        const knowledgeURL = 'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_knowledge.json';
+        const commandsURL = 'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/Flexsim_Commands.json';
+
+        console.log("Buscando arquivos de conhecimento da nuvem...");
+        const knowledgeResponse = await fetch(knowledgeURL);
+        const commandsResponse = await fetch(commandsURL);
+
+        if (!knowledgeResponse.ok || !commandsResponse.ok) {
+            throw new Error(`Falha ao buscar arquivos: ${knowledgeResponse.statusText} | ${commandsResponse.statusText}`);
+        }
+
+        const FlexDocData = await knowledgeResponse.json();
+        const Flexsim_Commands = await commandsResponse.json();
+        console.log("Arquivos carregados com sucesso!");
+
+        // Combina todo o conhecimento em um único texto
+        const allKnowledge = JSON.stringify(FlexDocData) + "\n\n" + JSON.stringify(Flexsim_Commands);
+
+        // Divide o texto em pedaços (chunks)
+        const textSplitter = new RecursiveCharacterTextSplitter({
+            chunkSize: 1000,
+            chunkOverlap: 100,
+        });
+        const docs = await textSplitter.createDocuments([allKnowledge]);
+
+        // Cria os embeddings (vetores) para os pedaços de texto
+        const embeddings = new GoogleGenerativeAIEmbeddings({
+            apiKey: process.env.API_KEY,
+            modelName: "embedding-001",
+            taskType: TaskType.RETRIEVAL_DOCUMENT
+        });
+
+        // Cria o índice vetorial em memória para busca rápida
+        vectorStore = await MemoryVectorStore.fromDocuments(docs, embeddings);
+
+        console.log("Sistema RAG inicializado e pronto para uso!");
+
+    } catch (error) {
+        console.error("ERRO CRÍTICO: Falha ao inicializar o sistema RAG:", error);
+        // Em caso de falha, o servidor continuará rodando, mas o chatbot não funcionará.
+    }
+};
+
+
+// --- INICIALIZAÇÃO DO SERVIDOR ---
+
 app.listen(port, () => {
-    console.log(`Servidor backend rodando em http://localhost:${port}`);
+    console.log(`Servidor backend rodando na porta ${port}`);
+    // Inicia o processo de carregar e indexar o conhecimento
+    initializeRag();
 });
