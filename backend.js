@@ -118,7 +118,7 @@ app.post('/api/chatbot', async (req, res) => {
         `;
         
         const genAI = new GoogleGenerativeAI(process.env.API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
@@ -191,3 +191,4 @@ app.listen(port, () => {
     // Inicia o processo de carregar e indexar o conhecimento
     initializeRag();
 });
+
