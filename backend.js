@@ -136,50 +136,73 @@ app.post('/api/chatbot', async (req, res) => {
 // --- FUNÇÃO DE INICIALIZAÇÃO DO RAG ---
 
 const initializeRag = async () => {
-    console.log("Inicializando o sistema RAG...");
+    console.log("Inicializando o sistema RAG de forma dinâmica...");
 
     try {
-        // URLs dos seus arquivos de conhecimento no GitHub
-        const knowledgeURL = 'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_knowledge.json';
-        const commandsURL = 'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/Flexsim_Commands.json';
+        // --- ETAPA 1: BUSCAR ARQUIVOS DINAMICAMENTE DO GITHUB ---
 
-        console.log("Buscando arquivos de conhecimento da nuvem...");
-        const knowledgeResponse = await fetch(knowledgeURL);
-        const commandsResponse = await fetch(commandsURL);
+        const owner = 'Leohgs7';
+        const repo = 'flexbotserver';
+        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/`;
 
-        if (!knowledgeResponse.ok || !commandsResponse.ok) {
-            throw new Error(`Falha ao buscar arquivos: ${knowledgeResponse.statusText} | ${commandsResponse.statusText}`);
+        console.log("Consultando a API do GitHub para listar arquivos...");
+        const repoContentsResponse = await fetch(apiUrl, {
+            headers: {
+                // O token aumenta a confiabilidade e evita limites de acesso da API
+                'Authorization': `token ${process.env.GITHUB_TOKEN}`
+            }
+        });
+
+        if (!repoContentsResponse.ok) {
+            throw new Error(`Falha ao listar arquivos do repositório: ${repoContentsResponse.statusText}`);
         }
 
-        const FlexDocData = await knowledgeResponse.json();
-        const Flexsim_Commands = await commandsResponse.json();
-        console.log("Arquivos carregados com sucesso!");
+        const repoContents = await repoContentsResponse.json();
 
-        // Combina todo o conhecimento em um único texto
-        const allKnowledge = JSON.stringify(FlexDocData) + "\n\n" + JSON.stringify(Flexsim_Commands);
+        // Filtra para pegar apenas os arquivos que terminam com .json
+        const jsonFiles = repoContents.filter(file => file.type === 'file' && file.name.endsWith('.json'));
 
-        // Divide o texto em pedaços (chunks)
+        if (jsonFiles.length === 0) {
+            throw new Error("Nenhum arquivo .json encontrado no repositório.");
+        }
+
+        console.log(`Encontrados ${jsonFiles.length} arquivos JSON. Buscando conteúdo...`);
+        
+        // Busca o conteúdo de todos os arquivos JSON em paralelo para mais eficiência
+        const allKnowledgePromises = jsonFiles.map(file =>
+            fetch(file.download_url).then(res => {
+                if (!res.ok) throw new Error(`Falha ao baixar ${file.name}`);
+                return res.json();
+            })
+        );
+        
+        const allKnowledgeObjects = await Promise.all(allKnowledgePromises);
+        console.log("Todos os arquivos JSON foram carregados com sucesso!");
+
+        // --- ETAPA 2: PROCESSAR E INDEXAR O CONTEÚDO (LÓGICA EXISTENTE) ---
+
+        // Combina todo o conhecimento em um único texto, convertendo cada objeto JSON em string
+        const allKnowledge = allKnowledgeObjects.map(obj => JSON.stringify(obj)).join("\n\n");
+
+        // O resto do processo é exatamente o mesmo de antes
         const textSplitter = new RecursiveCharacterTextSplitter({
             chunkSize: 1000,
             chunkOverlap: 100,
         });
         const docs = await textSplitter.createDocuments([allKnowledge]);
 
-        // Cria os embeddings (vetores) para os pedaços de texto
         const embeddings = new GoogleGenerativeAIEmbeddings({
             apiKey: process.env.API_KEY,
             modelName: "embedding-001",
             taskType: TaskType.RETRIEVAL_DOCUMENT
         });
 
-        // Cria o índice vetorial em memória para busca rápida
         vectorStore = await MemoryVectorStore.fromDocuments(docs, embeddings);
 
-        console.log("Sistema RAG inicializado e pronto para uso!");
+        console.log("Sistema RAG inicializado e pronto para uso com a base de conhecimento dinâmica!");
 
     } catch (error) {
         console.error("ERRO CRÍTICO: Falha ao inicializar o sistema RAG:", error);
-        // Em caso de falha, o servidor continuará rodando, mas o chatbot não funcionará.
     }
 };
 
@@ -191,4 +214,3 @@ app.listen(port, () => {
     // Inicia o processo de carregar e indexar o conhecimento
     initializeRag();
 });
-
