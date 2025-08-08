@@ -143,19 +143,19 @@ const initializeRag = async () => {
         const knowledgeURLs = [
             'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_knowledge.json',
             'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/Flexsim_Commands.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/best_practices.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/coding_flexscript.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/connecting_3d_flows.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_ui.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/getting_data.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/introduction.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/modules.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/reference_general.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_addtools.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_processflow.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_tasklogic.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/using_3d_objects.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/working_with_task_executers.json'
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/best_practices.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/coding_flexscript.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/connecting_3d_flows.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_ui.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/getting_data.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/introduction.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/modules.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/reference_general.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_addtools.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_processflow.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_tasklogic.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/using_3d_objects.json',
+            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/working_with_task_executers.json'
         ];
 
         console.log(`Buscando ${knowledgeURLs.length} arquivos de conhecimento da nuvem...`);
@@ -207,3 +207,4 @@ app.listen(port, () => {
     // Inicia o processo de carregar e indexar o conhecimento
     initializeRag();
 });
+
