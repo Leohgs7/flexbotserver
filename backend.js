@@ -3,6 +3,8 @@ const { Client } = require('pg');
 const cors = require('cors');
 require('dotenv').config();
 const fetch = require('node-fetch');
+const apiKey = process.env.API_KEY;
+const apiEndpoint = process.env.API_ENDPOINT;
 
 // Importações do LangChain e do Google GenAI
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -18,11 +20,7 @@ const port = 3001;
 let vectorStore; 
 
 // Middleware
-app.use(cors({
-    origin: 'https://flexbotserver.onrender.com', // Ajuste se o seu frontend estiver em outro domínio
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
-}));
+app.use(cors());
 app.use(express.json());
 
 // --- ENDPOINTS ORIGINAIS (SEM ALTERAÇÕES) ---
@@ -30,27 +28,56 @@ app.use(express.json());
 // Endpoint para testar a conexão com o banco de dados
 app.post('/api/test-connection', async (req, res) => {
     const { user, host, database, password, port } = req.body;
-    const tempClient = new Client({ user, host, database, password, port });
+
+    console.log('Credenciais recebidas:', { user, host, database, port }); // Log das credenciais
+
+    const tempClient = new Client({
+        user,
+        host,
+        database,
+        password,
+        port,
+        ssl: {
+        rejectUnauthorized: false, // Ignora a validação do certificado SSL
+    },
+    });
+
     try {
+        console.log('Tentando conectar ao banco de dados...'); // Log de tentativa de conexão
         await tempClient.connect();
+        console.log('Conexão bem-sucedida!'); // Log de sucesso
         await tempClient.end();
         res.json({ success: true, message: 'Conexão bem-sucedida!' });
     } catch (error) {
+        console.error('Erro ao conectar ao banco de dados:', error); // Log de erro
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// Endpoint para consultar tabelas do banco de dados
+// Endpoint para consultar tabelas
 app.post('/api/query', async (req, res) => {
     const { user, host, database, password, port, tables } = req.body;
-    const tempClient = new Client({ user, host, database, password, port });
+
+    const tempClient = new Client({
+        user,
+        host,
+        database,
+        password,
+        port,
+        ssl: {
+        rejectUnauthorized: false, // Ignora a validação do certificado SSL
+    },
+    });
+
     try {
         await tempClient.connect();
+
         const data = {};
         for (const table of tables) {
             const result = await tempClient.query(`SELECT * FROM ${table}`);
             data[table] = result.rows;
         }
+
         await tempClient.end();
         res.json({ success: true, data });
     } catch (error) {
