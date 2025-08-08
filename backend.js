@@ -136,55 +136,48 @@ app.post('/api/chatbot', async (req, res) => {
 // --- FUNÇÃO DE INICIALIZAÇÃO DO RAG ---
 
 const initializeRag = async () => {
-    console.log("Inicializando o sistema RAG de forma dinâmica...");
+    console.log("Inicializando o sistema RAG...");
 
     try {
-        // --- ETAPA 1: BUSCAR ARQUIVOS DINAMICAMENTE DO GITHUB ---
+        // Colocamos todas as URLs em um array para facilitar o gerenciamento
+        const knowledgeURLs = [
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_knowledge.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/Flexsim_Commands.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/best_practices.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/coding_flexscript.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/connecting_3d_flows.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_ui.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/getting_data.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/introduction.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/modules.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/reference_general.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_addtools.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_processflow.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_tasklogic.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/using_3d_objects.json',
+            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/working_with_task_executers.json'
+        ];
 
-        const owner = 'Leohgs7';
-        const repo = 'flexbotserver';
-        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/`;
+        console.log(`Buscando ${knowledgeURLs.length} arquivos de conhecimento da nuvem...`);
 
-        console.log("Consultando a API do GitHub para listar arquivos...");
-        const repoContentsResponse = await fetch(apiUrl, {
-            headers: {
-                // O token aumenta a confiabilidade e evita limites de acesso da API
-                'Authorization': `token ${process.env.GITHUB_TOKEN}`
-            }
-        });
+        // Usamos Promise.all para buscar todos os arquivos em paralelo, muito mais rápido!
+        const responses = await Promise.all(knowledgeURLs.map(url => fetch(url)));
 
-        if (!repoContentsResponse.ok) {
-            throw new Error(`Falha ao listar arquivos do repositório: ${repoContentsResponse.statusText}`);
+        // Verificamos se alguma das requisições falhou
+        const failedResponse = responses.find(res => !res.ok);
+        if (failedResponse) {
+            throw new Error(`Falha ao buscar o arquivo: ${failedResponse.url} - Status: ${failedResponse.statusText}`);
         }
 
-        const repoContents = await repoContentsResponse.json();
-
-        // Filtra para pegar apenas os arquivos que terminam com .json
-        const jsonFiles = repoContents.filter(file => file.type === 'file' && file.name.endsWith('.json'));
-
-        if (jsonFiles.length === 0) {
-            throw new Error("Nenhum arquivo .json encontrado no repositório.");
-        }
-
-        console.log(`Encontrados ${jsonFiles.length} arquivos JSON. Buscando conteúdo...`);
+        // Extraímos o JSON de todas as respostas
+        const allKnowledgeObjects = await Promise.all(responses.map(res => res.json()));
         
-        // Busca o conteúdo de todos os arquivos JSON em paralelo para mais eficiência
-        const allKnowledgePromises = jsonFiles.map(file =>
-            fetch(file.download_url).then(res => {
-                if (!res.ok) throw new Error(`Falha ao baixar ${file.name}`);
-                return res.json();
-            })
-        );
-        
-        const allKnowledgeObjects = await Promise.all(allKnowledgePromises);
         console.log("Todos os arquivos JSON foram carregados com sucesso!");
 
-        // --- ETAPA 2: PROCESSAR E INDEXAR O CONTEÚDO (LÓGICA EXISTENTE) ---
-
-        // Combina todo o conhecimento em um único texto, convertendo cada objeto JSON em string
+        // Combina todo o conhecimento em um único texto
         const allKnowledge = allKnowledgeObjects.map(obj => JSON.stringify(obj)).join("\n\n");
 
-        // O resto do processo é exatamente o mesmo de antes
+        // O resto da função continua exatamente como antes...
         const textSplitter = new RecursiveCharacterTextSplitter({
             chunkSize: 1000,
             chunkOverlap: 100,
@@ -199,7 +192,7 @@ const initializeRag = async () => {
 
         vectorStore = await MemoryVectorStore.fromDocuments(docs, embeddings);
 
-        console.log("Sistema RAG inicializado e pronto para uso com a base de conhecimento dinâmica!");
+        console.log("Sistema RAG inicializado e pronto para uso!");
 
     } catch (error) {
         console.error("ERRO CRÍTICO: Falha ao inicializar o sistema RAG:", error);
