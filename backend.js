@@ -1,126 +1,88 @@
+// backend.js
+
 const express = require('express');
 const { Client } = require('pg');
 const cors = require('cors');
 require('dotenv').config();
-const fetch = require('node-fetch');
-const apiKey = process.env.API_KEY;
-const apiEndpoint = process.env.API_ENDPOINT;
 
-// Importações do LangChain e do Google GenAI
+// Dependências da IA e do Supabase
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { MemoryVectorStore } = require("langchain/vectorstores/memory");
+const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
-const { TaskType } = require("@google/generative-ai");
-const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
+const { SupabaseVectorStore } = require("@langchain/community/vectorstores/supabase");
 
+// --- CONFIGURAÇÃO INICIAL ---
 const app = express();
 const port = 3001;
 
-// Variável global para armazenar nosso índice de conhecimento (Vector Store)
-let vectorStore; 
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// --- ENDPOINTS ORIGINAIS (SEM ALTERAÇÕES) ---
+// Inicializa o cliente do Supabase uma única vez com as variáveis de ambiente
+const supabaseClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-// Endpoint para testar a conexão com o banco de dados
-app.post('/api/test-connection', async (req, res) => {
-    const { user, host, database, password, port } = req.body;
-
-    console.log('Credenciais recebidas:', { user, host, database, port }); // Log das credenciais
-
-    const tempClient = new Client({
-        user,
-        host,
-        database,
-        password,
-        port,
-        ssl: {
-        rejectUnauthorized: false, // Ignora a validação do certificado SSL
-    },
-    });
-
-    try {
-        console.log('Tentando conectar ao banco de dados...'); // Log de tentativa de conexão
-        await tempClient.connect();
-        console.log('Conexão bem-sucedida!'); // Log de sucesso
-        await tempClient.end();
-        res.json({ success: true, message: 'Conexão bem-sucedida!' });
-    } catch (error) {
-        console.error('Erro ao conectar ao banco de dados:', error); // Log de erro
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// Endpoint para consultar tabelas
-app.post('/api/query', async (req, res) => {
-    const { user, host, database, password, port, tables } = req.body;
-
-    const tempClient = new Client({
-        user,
-        host,
-        database,
-        password,
-        port,
-        ssl: {
-        rejectUnauthorized: false, // Ignora a validação do certificado SSL
-    },
-    });
-
-    try {
-        await tempClient.connect();
-
-        const data = {};
-        for (const table of tables) {
-            const result = await tempClient.query(`SELECT * FROM ${table}`);
-            data[table] = result.rows;
-        }
-
-        await tempClient.end();
-        res.json({ success: true, data });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-
-// --- ENDPOINT DO CHATBOT COM LÓGICA RAG ---
-
-app.post('/api/chatbot', async (req, res) => {
-    const { message, dbData } = req.body;
-
-    if (!vectorStore) {
-        return res.status(500).json({ success: false, message: "O sistema RAG ainda não foi inicializado. Aguarde um momento e tente novamente." });
-    }
-
-    try {
-        // 1. ETAPA DE RECUPERAÇÃO (RETRIEVAL)
-        const relevantDocs = await vectorStore.similaritySearch(message, 5); // Busca os 5 chunks mais relevantes
-        const context = relevantDocs.map(doc => doc.pageContent).join('\n\n');
-
-        // 2. ETAPA DE GERAÇÃO AUMENTADA (AUGMENTED GENERATION)
-        const prompt = `
-            Você é um assistente virtual chamado Flex, especialista em FlexSim.
+// O "CÉREBRO" DA IA: O PROMPT MESTRE FINAL
+const masterPromptTemplate = `
+            Você é um assistente virtual chamada Flexbot, especialista em FlexSim.
             
-            Use o seguinte CONTEXTO TÉCNICO para responder a pergunta do usuário. Este contexto foi extraído da documentação oficial e de guias de comando. Se a resposta não estiver no contexto, diga que não encontrou a informação na sua base de conhecimento.
+            Use o seguinte CONTEXTO TÉCNICO para responder a pergunta do usuário. Este contexto foi extraído da documentação oficial e de guias de comando. Se a resposta não estiver no contexto, tente ajudar com seus conhecimentos mas informe que a resposta pode conter erros dado que náo foi encontrado no contexto.
             
             CONTEXTO TÉCNICO:
             ---
-            ${context}
+            {retrieved_knowledge}
             ---
             
             Se a pergunta for sobre desempenho ou funcionamento do modelo, analise os DADOS DA SIMULAÇÃO abaixo:
-            DADOS DA SIMULAÇÃO: ${JSON.stringify(dbData)}
+            DADOS DA SIMULAÇÃO: {db_data}
             
-            PERGUNTA DO USUÁRIO: "${message}"
+            PERGUNTA DO USUÁRIO: "{input}"
         `;
-        
-        const genAI = new GoogleGenerativeAI(process.env.API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-        const result = await model.generateContent(prompt);
+
+// --- ENDPOINTS DA API ---
+
+// Endpoint para testar a conexão com o banco de dados da simulação do usuário
+app.post('/api/test-connection', async (req, res) => {
+    const { user, host, database, password, port } = req.body;
+    const tempClient = new Client({ user, host, database, password, port, ssl: { rejectUnauthorized: false } });
+    try {
+        await tempClient.connect();
+        await tempClient.end();
+        res.json({ success: true, message: 'Conexão bem-sucedida!' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Endpoint principal do chatbot
+app.post('/api/chatbot', async (req, res) => {
+    const { message, dbData } = req.body;
+
+    try {
+        // --- ETAPA DE RAG (RETRIEVAL) ---
+        // Conecta ao Vector Store no Supabase para fazer a busca de conhecimento técnico
+        const embeddings = new GoogleGenerativeAIEmbeddings({ apiKey: process.env.API_KEY });
+        const vectorStore = new SupabaseVectorStore(embeddings, {
+            client: supabaseClient,
+            tableName: 'documents',
+            queryName: 'match_documents',
+        });
+
+        // Busca os documentos técnicos mais relevantes para a pergunta do usuário
+        const retrievedDocs = await vectorStore.similaritySearch(message, 4); // Pega os 4 chunks mais relevantes
+        const retrievedKnowledge = retrievedDocs.map(doc => doc.pageContent).join('\n\n');
+
+        // --- ETAPA DE GERAÇÃO ---
+        // Monta o prompt final com o contexto do RAG e os dados da simulação
+        let finalPrompt = masterPromptTemplate
+            .replace('{retrieved_knowledge}', retrievedKnowledge)
+            .replace('{db_data}', JSON.stringify(dbData, null, 2)) // Formata o JSON para melhor leitura da IA
+            .replace('{input}', message);
+        
+        // Chama a IA com o prompt enriquecido
+        const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+        const result = await model.generateContent(finalPrompt);
         const response = await result.response;
         const text = response.text();
 
@@ -132,79 +94,7 @@ app.post('/api/chatbot', async (req, res) => {
     }
 });
 
-
-// --- FUNÇÃO DE INICIALIZAÇÃO DO RAG ---
-
-const initializeRag = async () => {
-    console.log("Inicializando o sistema RAG...");
-
-    try {
-        // Colocamos todas as URLs em um array para facilitar o gerenciamento
-        const knowledgeURLs = [
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_knowledge.json',
-            'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/Flexsim_Commands.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/best_practices.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/coding_flexscript.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/connecting_3d_flows.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/flexsim_ui.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/getting_data.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/introduction.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/modules.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/reference_general.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_addtools.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_processflow.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/tutorials_tasklogic.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/using_3d_objects.json',
-            //'https://raw.githubusercontent.com/Leohgs7/flexbotserver/refs/heads/main/working_with_task_executers.json'
-        ];
-
-        console.log(`Buscando ${knowledgeURLs.length} arquivos de conhecimento da nuvem...`);
-
-        // Usamos Promise.all para buscar todos os arquivos em paralelo, muito mais rápido!
-        const responses = await Promise.all(knowledgeURLs.map(url => fetch(url)));
-
-        // Verificamos se alguma das requisições falhou
-        const failedResponse = responses.find(res => !res.ok);
-        if (failedResponse) {
-            throw new Error(`Falha ao buscar o arquivo: ${failedResponse.url} - Status: ${failedResponse.statusText}`);
-        }
-
-        // Extraímos o JSON de todas as respostas
-        const allKnowledgeObjects = await Promise.all(responses.map(res => res.json()));
-        
-        console.log("Todos os arquivos JSON foram carregados com sucesso!");
-
-        // Combina todo o conhecimento em um único texto
-        const allKnowledge = allKnowledgeObjects.map(obj => JSON.stringify(obj)).join("\n\n");
-
-        // O resto da função continua exatamente como antes...
-        const textSplitter = new RecursiveCharacterTextSplitter({
-            chunkSize: 1000,
-            chunkOverlap: 100,
-        });
-        const docs = await textSplitter.createDocuments([allKnowledge]);
-
-        const embeddings = new GoogleGenerativeAIEmbeddings({
-            apiKey: process.env.API_KEY,
-            modelName: "embedding-001",
-            taskType: TaskType.RETRIEVAL_DOCUMENT
-        });
-
-        vectorStore = await MemoryVectorStore.fromDocuments(docs, embeddings);
-
-        console.log("Sistema RAG inicializado e pronto para uso!");
-
-    } catch (error) {
-        console.error("ERRO CRÍTICO: Falha ao inicializar o sistema RAG:", error);
-    }
-};
-
-
 // --- INICIALIZAÇÃO DO SERVIDOR ---
-
 app.listen(port, () => {
-    console.log(`Servidor backend rodando na porta ${port}`);
-    // Inicia o processo de carregar e indexar o conhecimento
-    initializeRag();
+    console.log(`Servidor backend rodando na porta ${port}. Conectado ao Supabase para RAG.`);
 });
-
