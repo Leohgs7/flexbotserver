@@ -57,7 +57,14 @@ app.post('/api/test-connection', async (req, res) => {
 // Endpoint para consultar tabelas do banco de dados da simulação
 app.post('/api/query', async (req, res) => {
     const { user, host, database, password, port, tables } = req.body;
-    const tempClient = new Client({ user, host, database, password, port });
+    const tempClient = new Client({
+        user,
+        host,
+        database,
+        password,
+        port,
+        ssl: {
+        rejectUnauthorized: false,},});
     try {
         await tempClient.connect();
         const data = {};
