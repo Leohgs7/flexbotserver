@@ -57,35 +57,17 @@ app.post('/api/test-connection', async (req, res) => {
 // Endpoint para consultar tabelas do banco de dados da simulação
 app.post('/api/query', async (req, res) => {
     const { user, host, database, password, port, tables } = req.body;
-
-    const tempClient = new Client({
-        user,
-        host,
-        database,
-        password,
-        port,
-        ssl: {
-            rejectUnauthorized: false,
-        },
-    });
-
+    const tempClient = new Client({ user, host, database, password, port });
     try {
         await tempClient.connect();
-
         const data = {};
-        // Divide as tabelas em um array, removendo espaços em branco
-        const tableList = tables.split(',').map(table => table.trim());
-        
-        for (const table of tableList) {
-            // Adiciona aspas duplas para garantir que nomes de tabelas com maiúsculas/minúsculas funcionem
-            const result = await tempClient.query(`SELECT * FROM "${table}"`);
+        for (const table of tables) {
+            const result = await tempClient.query(`SELECT * FROM ${table}`);
             data[table] = result.rows;
         }
-
         await tempClient.end();
         res.json({ success: true, data });
     } catch (error) {
-        console.error("Erro ao executar a consulta no /api/query:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
