@@ -198,7 +198,7 @@ async function performSemanticSearch(query, k = 4) {
     // Busca usando RPC com dimensão correta
     const { data, error } = await supabaseClient.rpc('match_documents', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.3,
+      match_threshold: 0.05,
       match_count: k
     });
 
@@ -216,7 +216,7 @@ async function performSemanticSearch(query, k = 4) {
     return data.map(doc => ({
       content: doc.content || '',
       metadata: doc.metadata || {},
-      similarity: doc.similarity || 0.5
+      similarity: doc.similarity || 0.6
     }));
 
   } catch (error) {
