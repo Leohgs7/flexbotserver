@@ -106,7 +106,7 @@ app.post('/api/chatbot', async (req, res) => {
         
         // Chama a IA com o prompt enriquecido
         const genAI = new GoogleGenerativeAI(process.env.API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+        const model = genAI.getGenerativeModel({ model: process.env.MODEL});
         const result = await model.generateContent(finalPrompt);
         const response = await result.response;
         const text = response.text();
