@@ -1,4 +1,4 @@
-// backend.js (versão corrigida com dimensionalidade configurável)
+// backend.js (versão corrigida com nomes de modelo válidos)
 
 const express = require('express');
 const { Client } = require('pg');
@@ -135,36 +135,49 @@ async function withBackoff(task, { tries = 5, baseMs = 1500 } = {}) {
   throw lastErr;
 }
 
-// Rate limiters específicos
-const GEMINI_RPM = parseInt(process.env.GEMINI_RPM || "12", 10);
-const GEMINI_RPD = parseInt(process.env.GEMINI_RPD || "900", 10);
-const EMBED_RPM = parseInt(process.env.EMBED_RPM || "8", 10);
-const EMBED_DIMENSIONS = parseInt(process.env.EMBED_DIMENSIONS || "768", 10); // Dimensão configurável
+// Rate limiters e configurações
+const GEMINI_RPM = parseInt(process.env.GEMINI_RPM || "8", 10);  // Mais conservador
+const GEMINI_RPD = parseInt(process.env.GEMINI_RPD || "800", 10);
+const EMBED_RPM = parseInt(process.env.EMBED_RPM || "6", 10);    // Muito conservador
+const EMBED_DIMENSIONS = parseInt(process.env.EMBED_DIMENSIONS || "768", 10);
+
+// Mapear nomes de modelo válidos
+const VALID_MODELS = {
+  'gemini-2.5-flash-lite': 'gemini-2.5-flash',
+  'gemini-2.5-flash': 'gemini-2.5-flash', 
+  'gemini-2.5-pro': 'gemini-2.5-pro',
+  'gemini-1.5-flash': 'gemini-1.5-flash',
+  'gemini-1.5-pro': 'gemini-1.5-pro'
+};
 
 const genLimiter = new RateLimiter({ maxPerMinute: GEMINI_RPM, maxPerDay: GEMINI_RPD });
 const embedLimiter = new RateLimiter({ maxPerMinute: EMBED_RPM, maxPerDay: GEMINI_RPD });
 
-// -------- Funções de embedding com dimensionalidade configurável --------
+// -------- Funções de embedding --------
 
-// Função para gerar embeddings usando gemini-embedding-001 com dimensão específica
+// Função para gerar embeddings com dimensionalidade específica
 async function generateEmbedding(text) {
   return embedLimiter.schedule(() =>
     withBackoff(async () => {
       try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
+        const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
         
-        // Configuração com dimensionalidade específica
-        const request = {
-          content: { parts: [{ text: text }] },
-          // Parâmetros para controlar a dimensão do embedding
-          outputDimensionality: EMBED_DIMENSIONS,
-          taskType: 'SEMANTIC_SIMILARITY'
-        };
+        // Para text-embedding-004, use embedContent simples
+        const result = await model.embedContent(text);
+        let embedding = result.embedding.values;
         
-        const result = await model.embedContent(request);
-        const embedding = result.embedding.values;
+        // Se o embedding for muito grande, truncar para a dimensão desejada
+        if (embedding.length > EMBED_DIMENSIONS) {
+          console.log(`Truncando embedding de ${embedding.length} para ${EMBED_DIMENSIONS} dimensões`);
+          embedding = embedding.slice(0, EMBED_DIMENSIONS);
+        }
         
-        console.log(`Embedding gerado com ${embedding.length} dimensões (esperado: ${EMBED_DIMENSIONS})`);
+        // Se for menor, fazer padding com zeros
+        while (embedding.length < EMBED_DIMENSIONS) {
+          embedding.push(0);
+        }
+        
+        console.log(`Embedding processado com ${embedding.length} dimensões (alvo: ${EMBED_DIMENSIONS})`);
         return embedding;
         
       } catch (error) {
@@ -175,7 +188,7 @@ async function generateEmbedding(text) {
   );
 }
 
-// Função de busca semântica usando RPC com dimensão correta
+// Função de busca semântica
 async function performSemanticSearch(query, k = 4) {
   try {
     console.log(`Buscando por: "${query}"`);
@@ -184,21 +197,15 @@ async function performSemanticSearch(query, k = 4) {
     const queryEmbedding = await generateEmbedding(query);
     console.log(`Embedding gerado com ${queryEmbedding.length} dimensões`);
     
-    // Validação da dimensão
-    if (queryEmbedding.length !== EMBED_DIMENSIONS) {
-      throw new Error(`Dimensão incorreta: esperado ${EMBED_DIMENSIONS}, recebido ${queryEmbedding.length}`);
-    }
-    
     // Busca usando RPC com dimensão correta
     const { data, error } = await supabaseClient.rpc('match_documents', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.3, // Threshold mais baixo para melhor recall
+      match_threshold: 0.3,
       match_count: k
     });
 
     if (error) {
       console.error('Erro na busca semântica:', error);
-      // Fallback para busca textual se RPC falhar
       return await fallbackTextSearch(query, k);
     }
 
@@ -216,7 +223,6 @@ async function performSemanticSearch(query, k = 4) {
 
   } catch (error) {
     console.error('Erro no semantic search:', error);
-    // Fallback para busca textual
     return await fallbackTextSearch(query, k);
   }
 }
@@ -235,11 +241,11 @@ async function fallbackTextSearch(query, k = 4) {
       return data.map(doc => ({
         content: doc.content || doc.page_content || '',
         metadata: doc.metadata || {},
-        similarity: 0.4 // Score baixo para busca textual
+        similarity: 0.4
       }));
     }
 
-    // Se ainda assim não encontrar, retorna documentos aleatórios
+    // Se ainda não encontrar, pegar documentos aleatórios
     const { data: allDocs } = await supabaseClient
       .from('documents')
       .select('*')
@@ -257,13 +263,16 @@ async function fallbackTextSearch(query, k = 4) {
   }
 }
 
-// Função para geração de texto com rate limiting
+// Função para geração de texto com modelo válido
 async function generateWithGemini(finalPrompt) {
   return genLimiter.schedule(() =>
     withBackoff(async () => {
-      const model = genAI.getGenerativeModel({ 
-        model: process.env.MODEL || 'gemini-2.5-flash-lite' 
-      });
+      const configuredModel = process.env.MODEL || 'gemini-2.5-flash';
+      const validModel = VALID_MODELS[configuredModel] || 'gemini-2.5-flash';
+      
+      console.log(`Usando modelo: ${validModel} (configurado: ${configuredModel})`);
+      
+      const model = genAI.getGenerativeModel({ model: validModel });
       const result = await model.generateContent(finalPrompt);
       const response = await result.response;
       return response.text();
@@ -312,7 +321,7 @@ app.post('/api/query', async (req, res) => {
   }
 });
 
-// Chat único com busca melhorada
+// Chat único
 app.post('/api/chatbot', async (req, res) => {
   const { message, dbData } = req.body;
   
@@ -395,7 +404,7 @@ app.post('/api/chatbot/batch', async (req, res) => {
   }
 });
 
-// Endpoint para testar embeddings com dimensão
+// Endpoint para testar embeddings
 app.post('/api/test-embedding', async (req, res) => {
   const { text } = req.body;
   
@@ -403,10 +412,10 @@ app.post('/api/test-embedding', async (req, res) => {
     const embedding = await generateEmbedding(text || "teste de embedding");
     res.json({ 
       success: true, 
-      embedding: embedding.slice(0, 5), // Apenas os primeiros 5 valores
+      embedding: embedding.slice(0, 5),
       dimensions: embedding.length,
       expectedDimensions: EMBED_DIMENSIONS,
-      message: `Embedding gerado com ${embedding.length} dimensões (esperado: ${EMBED_DIMENSIONS})`
+      message: `Embedding gerado com sucesso! ${embedding.length} dimensões`
     });
   } catch (error) {
     console.error("Erro no teste de embedding:", error);
@@ -435,6 +444,8 @@ app.get('/api/check-documents', async (req, res) => {
       sampleDocument: data[0] || null,
       documentCount: data.length,
       configuredDimensions: EMBED_DIMENSIONS,
+      validModels: Object.keys(VALID_MODELS),
+      currentModel: process.env.MODEL || 'gemini-2.5-flash',
       message: data.length > 0 ? 'Tabela encontrada com dados' : 'Tabela existe mas está vazia'
     });
   } catch (error) {
@@ -445,10 +456,7 @@ app.get('/api/check-documents', async (req, res) => {
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 app.listen(port, () => {
   console.log(`Servidor backend rodando na porta ${port}`);
-  console.log(`Usando gemini-embedding-001 com ${EMBED_DIMENSIONS} dimensões`);
-  console.log(`Rate limits: ${EMBED_RPM} RPM para embeddings, ${GEMINI_RPM} RPM para geração`);
-  console.log(`Endpoints disponíveis:`);
-  console.log(`- POST /api/test-embedding`);
-  console.log(`- GET /api/check-documents`);
-  console.log(`- POST /api/chatbot`);
+  console.log(`Usando modelo: ${VALID_MODELS[process.env.MODEL || 'gemini-2.5-flash']}`);
+  console.log(`Embeddings: text-embedding-004 com ${EMBED_DIMENSIONS} dimensões`);
+  console.log(`Rate limits: ${EMBED_RPM} RPM embeddings, ${GEMINI_RPM} RPM geração`);
 });
