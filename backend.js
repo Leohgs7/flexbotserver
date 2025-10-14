@@ -1,32 +1,34 @@
-// backend.js (com rate limiting e batch para Gemini 2.5 Flash Lite)
+// backend.js (modificado para usar gemini-embedding-001 nativamente)
 
 const express = require('express');
 const { Client } = require('pg');
 const cors = require('cors');
 require('dotenv').config();
 
+// Dependências da IA e do Supabase
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createClient } = require('@supabase/supabase-js');
-const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
-const { SupabaseVectorStore } = require("@langchain/community/vectorstores/supabase");
 
 // --- CONFIGURAÇÃO INICIAL ---
 const app = express();
 const port = 3001;
+
 app.use(cors());
 app.use(express.json());
 
-// Supabase
+// Inicializa o cliente do Supabase
 const supabaseClient = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// Prompt mestre
+// Inicializa o cliente do Gemini
+const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+
 const masterPromptTemplate = `
 Você é um assistente virtual chamada Flexbot, especialista em FlexSim.
 
-Use o seguinte CONTEXTO TÉCNICO para responder a pergunta do usuário. Este contexto foi extraído da documentação oficial e de guias de comando. Se a resposta não estiver no contexto, tente ajudar com seus conhecimentos mas informe que a resposta pode conter erros dado que náo foi encontrado no contexto.
+Use o seguinte CONTEXTO TÉCNICO para responder a pergunta do usuário. Este contexto foi extraído da documentação oficial e de guias de comando. Se a resposta não estiver no contexto, tente ajudar com seus conhecimentos mas informe que a resposta pode conter erros dado que não foi encontrado no contexto.
 
 CONTEXTO TÉCNICO:
 ---
@@ -40,15 +42,15 @@ DADOS DA SIMULAÇÃO: {db_data}
 PERGUNTA DO USUÁRIO: "{input}"
 `;
 
-// -------- Rate limiting utilitário (sem dependências) --------
+// -------- Rate Limiter com configuração específica para embeddings --------
 const nowMs = () => Date.now();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const jitter = (ms) => Math.floor(ms * (0.5 + Math.random())); // 50–150%
+const jitter = (ms) => Math.floor(ms * (0.5 + Math.random()));
 
 class RateLimiter {
   constructor({ maxPerMinute, maxPerDay }) {
-    this.maxPerMinute = Math.max(1, maxPerMinute || 12); // margem abaixo do limite do tier gratuito
-    this.maxPerDay = Math.max(1, maxPerDay || 900);       // idem cota diária
+    this.maxPerMinute = Math.max(1, maxPerMinute || 12);
+    this.maxPerDay = Math.max(1, maxPerDay || 900);
     this.minIntervalMs = Math.ceil(60000 / this.maxPerMinute);
     this.queue = [];
     this.running = false;
@@ -110,8 +112,8 @@ class RateLimiter {
   }
 }
 
-// Retries com backoff exponencial quando 429/quota
-async function withBackoff(task, { tries = 5, baseMs = 1500 } = {}) {
+// Retry com backoff exponencial
+async function withBackoff(task, { tries = 3, baseMs = 1500 } = {}) {
   let attempt = 0;
   let lastErr;
   while (attempt < tries) {
@@ -133,33 +135,65 @@ async function withBackoff(task, { tries = 5, baseMs = 1500 } = {}) {
   throw lastErr;
 }
 
-// Configuráveis por env (deixe margem abaixo do limite do tier)
-const GEMINI_RPM = parseInt(process.env.GEMINI_RPM || "12", 10);           // ex.: 12 < 15
-const GEMINI_RPD = parseInt(process.env.GEMINI_RPD || "900", 10);          // ex.: 900 < 1000
-const GEMINI_EMBED_RPM = parseInt(process.env.GEMINI_EMBED_RPM || "12", 10);
+// Rate limiters específicos
+const GEMINI_RPM = parseInt(process.env.GEMINI_RPM || "12", 10);
+const GEMINI_RPD = parseInt(process.env.GEMINI_RPD || "900", 10);
+const EMBED_RPM = parseInt(process.env.EMBED_RPM || "10", 10); // Mais conservador para embeddings
 
 const genLimiter = new RateLimiter({ maxPerMinute: GEMINI_RPM, maxPerDay: GEMINI_RPD });
-const embedLimiter = new RateLimiter({ maxPerMinute: GEMINI_EMBED_RPM, maxPerDay: GEMINI_RPD });
+const embedLimiter = new RateLimiter({ maxPerMinute: EMBED_RPM, maxPerDay: GEMINI_RPD });
 
-// -------- Funções de negócio --------
-const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+// -------- Funções de embedding nativas --------
 
-async function generateWithGemini(finalPrompt) {
-  const model = genAI.getGenerativeModel({ model: process.env.MODEL });
-  // Envolve a chamada com retry dentro do limiter
-  return genLimiter.schedule(() =>
+// Função para gerar embeddings usando gemini-embedding-001
+async function generateEmbedding(text) {
+  return embedLimiter.schedule(() =>
     withBackoff(async () => {
-      const result = await model.generateContent(finalPrompt);
-      const response = await result.response;
-      return response.text();
+      try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
+        const result = await model.embedContent(text);
+        return result.embedding.values;
+      } catch (error) {
+        console.error('Erro ao gerar embedding:', error);
+        throw error;
+      }
     })
   );
 }
 
-async function similaritySearchLimited(vectorStore, query, k = 4) {
-  return embedLimiter.schedule(() =>
+// Função para busca de similaridade usando embeddings
+async function performSemanticSearch(query, k = 4) {
+  try {
+    // Gera embedding da query
+    const queryEmbedding = await generateEmbedding(query);
+    
+    // Busca documentos similares no Supabase usando RPC
+    const { data, error } = await supabaseClient.rpc('match_documents', {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.7,
+      match_count: k
+    });
+
+    if (error) {
+      console.error('Erro na busca semântica:', error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Erro no semantic search:', error);
+    throw error;
+  }
+}
+
+// Função para geração de texto com rate limiting
+async function generateWithGemini(finalPrompt) {
+  return genLimiter.schedule(() =>
     withBackoff(async () => {
-      return vectorStore.similaritySearch(query, k);
+      const model = genAI.getGenerativeModel({ model: process.env.MODEL || 'gemini-2.5-flash-lite' });
+      const result = await model.generateContent(finalPrompt);
+      const response = await result.response;
+      return response.text();
     })
   );
 }
@@ -169,7 +203,11 @@ async function similaritySearchLimited(vectorStore, query, k = 4) {
 // Teste de conexão com o banco do usuário
 app.post('/api/test-connection', async (req, res) => {
   const { user, host, database, password, port } = req.body;
-  const tempClient = new Client({ user, host, database, password, port, ssl: { rejectUnauthorized: false } });
+  const tempClient = new Client({ 
+    user, host, database, password, port, 
+    ssl: { rejectUnauthorized: false } 
+  });
+  
   try {
     await tempClient.connect();
     await tempClient.end();
@@ -183,13 +221,10 @@ app.post('/api/test-connection', async (req, res) => {
 app.post('/api/query', async (req, res) => {
   const { user, host, database, password, port, tables } = req.body;
   const tempClient = new Client({
-    user,
-    host,
-    database,
-    password,
-    port,
-    ssl: { rejectUnauthorized: false },
+    user, host, database, password, port,
+    ssl: { rejectUnauthorized: false }
   });
+  
   try {
     await tempClient.connect();
     const data = {};
@@ -204,20 +239,16 @@ app.post('/api/query', async (req, res) => {
   }
 });
 
-// Chat único
+// Chat único com embeddings nativos
 app.post('/api/chatbot', async (req, res) => {
   const { message, dbData } = req.body;
+  
   try {
-    // RAG
-    const embeddings = new GoogleGenerativeAIEmbeddings({ apiKey: process.env.API_KEY });
-    const vectorStore = new SupabaseVectorStore(embeddings, {
-      client: supabaseClient,
-      tableName: 'documents',
-      queryName: 'match_documents',
-    });
-
-    const retrievedDocs = await similaritySearchLimited(vectorStore, message, 4);
-    const retrievedKnowledge = retrievedDocs.map(doc => doc.pageContent).join('\n\n');
+    // RAG usando embeddings nativos
+    const retrievedDocs = await performSemanticSearch(message, 4);
+    const retrievedKnowledge = retrievedDocs
+      .map(doc => doc.content || doc.page_content)
+      .join('\n\n');
 
     // Prompt final
     const finalPrompt = masterPromptTemplate
@@ -229,41 +260,53 @@ app.post('/api/chatbot', async (req, res) => {
     res.json({ success: true, response: text });
   } catch (error) {
     console.error("Erro no endpoint do chatbot:", error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: error.message,
+      details: 'Verifique se os rate limits estão sendo respeitados'
+    });
   }
 });
 
-// Chat em lote
-// payload: { messages: [ "pergunta 1", "pergunta 2", ... ], dbData: {...} }
+// Chat em lote com embeddings otimizados
 app.post('/api/chatbot/batch', async (req, res) => {
   const { messages, dbData } = req.body;
+  
   if (!Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ success: false, message: 'Envie "messages" como array não vazio.' });
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Envie "messages" como array não vazio.' 
+    });
   }
 
   try {
-    // RAG único por item (para máxima precisão contextual);
-    // se quiser performance, também é possível fazer RAG uma vez e reutilizar.
-    const embeddings = new GoogleGenerativeAIEmbeddings({ apiKey: process.env.API_KEY });
-    const vectorStore = new SupabaseVectorStore(embeddings, {
-      client: supabaseClient,
-      tableName: 'documents',
-      queryName: 'match_documents',
-    });
-
     const results = [];
+    
     for (const msg of messages) {
-      const retrievedDocs = await similaritySearchLimited(vectorStore, msg, 4);
-      const retrievedKnowledge = retrievedDocs.map(doc => doc.pageContent).join('\n\n');
+      try {
+        // RAG para cada mensagem
+        const retrievedDocs = await performSemanticSearch(msg, 4);
+        const retrievedKnowledge = retrievedDocs
+          .map(doc => doc.content || doc.page_content)
+          .join('\n\n');
 
-      const finalPrompt = masterPromptTemplate
-        .replace('{retrieved_knowledge}', retrievedKnowledge)
-        .replace('{db_data}', JSON.stringify(dbData, null, 2))
-        .replace('{input}', msg);
+        const finalPrompt = masterPromptTemplate
+          .replace('{retrieved_knowledge}', retrievedKnowledge)
+          .replace('{db_data}', JSON.stringify(dbData, null, 2))
+          .replace('{input}', msg);
 
-      const text = await generateWithGemini(finalPrompt);
-      results.push({ input: msg, response: text });
-      // O espaçamento entre chamadas já é garantido pelo limiter
+        const text = await generateWithGemini(finalPrompt);
+        results.push({ input: msg, response: text, success: true });
+        
+      } catch (error) {
+        console.error(`Erro processando mensagem "${msg}":`, error);
+        results.push({ 
+          input: msg, 
+          response: null, 
+          success: false, 
+          error: error.message 
+        });
+      }
     }
 
     res.json({ success: true, results });
@@ -273,7 +316,26 @@ app.post('/api/chatbot/batch', async (req, res) => {
   }
 });
 
+// Endpoint para testar embeddings
+app.post('/api/test-embedding', async (req, res) => {
+  const { text } = req.body;
+  
+  try {
+    const embedding = await generateEmbedding(text);
+    res.json({ 
+      success: true, 
+      embedding: embedding.slice(0, 10), // Apenas os primeiros 10 valores para teste
+      dimensions: embedding.length 
+    });
+  } catch (error) {
+    console.error("Erro no teste de embedding:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 app.listen(port, () => {
-  console.log(`Servidor backend rodando na porta ${port}. Conectado ao Supabase para RAG.`);
+  console.log(`Servidor backend rodando na porta ${port}`);
+  console.log(`Usando gemini-embedding-001 com rate limiting rigoroso`);
+  console.log(`Rate limits: ${EMBED_RPM} RPM para embeddings, ${GEMINI_RPM} RPM para geração`);
 });
