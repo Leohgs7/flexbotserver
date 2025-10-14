@@ -160,7 +160,7 @@ async function generateEmbedding(text) {
   return embedLimiter.schedule(() =>
     withBackoff(async () => {
       try {
-        const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
         const result = await model.embedContent(text);
         let embedding = result.embedding.values;
         
@@ -455,6 +455,6 @@ app.get('/api/check-documents', async (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor backend rodando na porta ${port}`);
   console.log(`Usando modelo: ${VALID_MODELS[process.env.MODEL || 'gemini-2.5-flash']}`);
-  console.log(`Embeddings: text-embedding-004 com ${EMBED_DIMENSIONS} dimensões`);
+  console.log(`Embeddings: gemini-embedding-001 com ${EMBED_DIMENSIONS} dimensões`);
   console.log(`Rate limits: ${EMBED_RPM} RPM embeddings, ${GEMINI_RPM} RPM geração`);
 });
