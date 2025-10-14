@@ -161,23 +161,21 @@ async function generateEmbedding(text) {
     withBackoff(async () => {
       try {
         const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
-        
-        // Para text-embedding-004, use embedContent simples
         const result = await model.embedContent(text);
         let embedding = result.embedding.values;
         
-        // Se o embedding for muito grande, truncar para a dimensão desejada
+        // Truncar para 768 dimensões para compatibilidade
         if (embedding.length > EMBED_DIMENSIONS) {
           console.log(`Truncando embedding de ${embedding.length} para ${EMBED_DIMENSIONS} dimensões`);
           embedding = embedding.slice(0, EMBED_DIMENSIONS);
         }
         
-        // Se for menor, fazer padding com zeros
+        // Padding se necessário
         while (embedding.length < EMBED_DIMENSIONS) {
           embedding.push(0);
         }
         
-        console.log(`Embedding processado com ${embedding.length} dimensões (alvo: ${EMBED_DIMENSIONS})`);
+        console.log(`Embedding processado com ${embedding.length} dimensões`);
         return embedding;
         
       } catch (error) {
