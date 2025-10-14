@@ -1,4 +1,4 @@
-// backend.js (modificado para usar gemini-embedding-001 nativamente)
+// backend.js (versão corrigida com dimensionalidade configurável)
 
 const express = require('express');
 const { Client } = require('pg');
@@ -42,7 +42,7 @@ DADOS DA SIMULAÇÃO: {db_data}
 PERGUNTA DO USUÁRIO: "{input}"
 `;
 
-// -------- Rate Limiter com configuração específica para embeddings --------
+// -------- Rate Limiter --------
 const nowMs = () => Date.now();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (ms) => Math.floor(ms * (0.5 + Math.random()));
@@ -113,7 +113,7 @@ class RateLimiter {
 }
 
 // Retry com backoff exponencial
-async function withBackoff(task, { tries = 3, baseMs = 1500 } = {}) {
+async function withBackoff(task, { tries = 5, baseMs = 1500 } = {}) {
   let attempt = 0;
   let lastErr;
   while (attempt < tries) {
@@ -138,21 +138,35 @@ async function withBackoff(task, { tries = 3, baseMs = 1500 } = {}) {
 // Rate limiters específicos
 const GEMINI_RPM = parseInt(process.env.GEMINI_RPM || "12", 10);
 const GEMINI_RPD = parseInt(process.env.GEMINI_RPD || "900", 10);
-const EMBED_RPM = parseInt(process.env.EMBED_RPM || "10", 10); // Mais conservador para embeddings
+const EMBED_RPM = parseInt(process.env.EMBED_RPM || "8", 10);
+const EMBED_DIMENSIONS = parseInt(process.env.EMBED_DIMENSIONS || "768", 10); // Dimensão configurável
 
 const genLimiter = new RateLimiter({ maxPerMinute: GEMINI_RPM, maxPerDay: GEMINI_RPD });
 const embedLimiter = new RateLimiter({ maxPerMinute: EMBED_RPM, maxPerDay: GEMINI_RPD });
 
-// -------- Funções de embedding nativas --------
+// -------- Funções de embedding com dimensionalidade configurável --------
 
-// Função para gerar embeddings usando gemini-embedding-001
+// Função para gerar embeddings usando gemini-embedding-001 com dimensão específica
 async function generateEmbedding(text) {
   return embedLimiter.schedule(() =>
     withBackoff(async () => {
       try {
         const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
-        const result = await model.embedContent(text);
-        return result.embedding.values;
+        
+        // Configuração com dimensionalidade específica
+        const request = {
+          content: { parts: [{ text: text }] },
+          // Parâmetros para controlar a dimensão do embedding
+          outputDimensionality: EMBED_DIMENSIONS,
+          taskType: 'SEMANTIC_SIMILARITY'
+        };
+        
+        const result = await model.embedContent(request);
+        const embedding = result.embedding.values;
+        
+        console.log(`Embedding gerado com ${embedding.length} dimensões (esperado: ${EMBED_DIMENSIONS})`);
+        return embedding;
+        
       } catch (error) {
         console.error('Erro ao gerar embedding:', error);
         throw error;
@@ -161,28 +175,85 @@ async function generateEmbedding(text) {
   );
 }
 
-// Função para busca de similaridade usando embeddings
+// Função de busca semântica usando RPC com dimensão correta
 async function performSemanticSearch(query, k = 4) {
   try {
+    console.log(`Buscando por: "${query}"`);
+    
     // Gera embedding da query
     const queryEmbedding = await generateEmbedding(query);
+    console.log(`Embedding gerado com ${queryEmbedding.length} dimensões`);
     
-    // Busca documentos similares no Supabase usando RPC
+    // Validação da dimensão
+    if (queryEmbedding.length !== EMBED_DIMENSIONS) {
+      throw new Error(`Dimensão incorreta: esperado ${EMBED_DIMENSIONS}, recebido ${queryEmbedding.length}`);
+    }
+    
+    // Busca usando RPC com dimensão correta
     const { data, error } = await supabaseClient.rpc('match_documents', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.7,
+      match_threshold: 0.3, // Threshold mais baixo para melhor recall
       match_count: k
     });
 
     if (error) {
       console.error('Erro na busca semântica:', error);
-      throw error;
+      // Fallback para busca textual se RPC falhar
+      return await fallbackTextSearch(query, k);
     }
 
-    return data || [];
+    if (!data || data.length === 0) {
+      console.log('Nenhum documento encontrado via RPC, usando fallback');
+      return await fallbackTextSearch(query, k);
+    }
+
+    console.log(`Encontrados ${data.length} documentos via busca vetorial`);
+    return data.map(doc => ({
+      content: doc.content || '',
+      metadata: doc.metadata || {},
+      similarity: doc.similarity || 0.5
+    }));
+
   } catch (error) {
     console.error('Erro no semantic search:', error);
-    throw error;
+    // Fallback para busca textual
+    return await fallbackTextSearch(query, k);
+  }
+}
+
+// Fallback para busca textual
+async function fallbackTextSearch(query, k = 4) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('documents')
+      .select('*')
+      .textSearch('content', query.replace(/['"]/g, ''))
+      .limit(k);
+
+    if (!error && data && data.length > 0) {
+      console.log(`Fallback: encontrados ${data.length} documentos por busca textual`);
+      return data.map(doc => ({
+        content: doc.content || doc.page_content || '',
+        metadata: doc.metadata || {},
+        similarity: 0.4 // Score baixo para busca textual
+      }));
+    }
+
+    // Se ainda assim não encontrar, retorna documentos aleatórios
+    const { data: allDocs } = await supabaseClient
+      .from('documents')
+      .select('*')
+      .limit(k);
+
+    return (allDocs || []).map(doc => ({
+      content: doc.content || doc.page_content || '',
+      metadata: doc.metadata || {},
+      similarity: 0.2
+    }));
+
+  } catch (error) {
+    console.error('Erro no fallback:', error);
+    return [];
   }
 }
 
@@ -190,7 +261,9 @@ async function performSemanticSearch(query, k = 4) {
 async function generateWithGemini(finalPrompt) {
   return genLimiter.schedule(() =>
     withBackoff(async () => {
-      const model = genAI.getGenerativeModel({ model: process.env.MODEL || 'gemini-2.5-flash-lite' });
+      const model = genAI.getGenerativeModel({ 
+        model: process.env.MODEL || 'gemini-2.5-flash-lite' 
+      });
       const result = await model.generateContent(finalPrompt);
       const response = await result.response;
       return response.text();
@@ -239,36 +312,42 @@ app.post('/api/query', async (req, res) => {
   }
 });
 
-// Chat único com embeddings nativos
+// Chat único com busca melhorada
 app.post('/api/chatbot', async (req, res) => {
   const { message, dbData } = req.body;
   
   try {
-    // RAG usando embeddings nativos
+    console.log(`Processando mensagem: "${message}"`);
+    
+    // RAG usando busca vetorial
     const retrievedDocs = await performSemanticSearch(message, 4);
     const retrievedKnowledge = retrievedDocs
-      .map(doc => doc.content || doc.page_content)
+      .map(doc => doc.content)
+      .filter(content => content && content.trim().length > 0)
       .join('\n\n');
+
+    console.log(`Contexto recuperado: ${retrievedKnowledge.length} caracteres`);
 
     // Prompt final
     const finalPrompt = masterPromptTemplate
-      .replace('{retrieved_knowledge}', retrievedKnowledge)
-      .replace('{db_data}', JSON.stringify(dbData, null, 2))
+      .replace('{retrieved_knowledge}', retrievedKnowledge || 'Nenhum contexto específico encontrado.')
+      .replace('{db_data}', JSON.stringify(dbData || {}, null, 2))
       .replace('{input}', message);
 
     const text = await generateWithGemini(finalPrompt);
     res.json({ success: true, response: text });
+    
   } catch (error) {
     console.error("Erro no endpoint do chatbot:", error);
     res.status(500).json({ 
       success: false, 
       message: error.message,
-      details: 'Verifique se os rate limits estão sendo respeitados'
+      details: 'Erro no processamento da mensagem'
     });
   }
 });
 
-// Chat em lote com embeddings otimizados
+// Chat em lote
 app.post('/api/chatbot/batch', async (req, res) => {
   const { messages, dbData } = req.body;
   
@@ -284,15 +363,15 @@ app.post('/api/chatbot/batch', async (req, res) => {
     
     for (const msg of messages) {
       try {
-        // RAG para cada mensagem
         const retrievedDocs = await performSemanticSearch(msg, 4);
         const retrievedKnowledge = retrievedDocs
-          .map(doc => doc.content || doc.page_content)
+          .map(doc => doc.content)
+          .filter(content => content && content.trim().length > 0)
           .join('\n\n');
 
         const finalPrompt = masterPromptTemplate
-          .replace('{retrieved_knowledge}', retrievedKnowledge)
-          .replace('{db_data}', JSON.stringify(dbData, null, 2))
+          .replace('{retrieved_knowledge}', retrievedKnowledge || 'Nenhum contexto específico encontrado.')
+          .replace('{db_data}', JSON.stringify(dbData || {}, null, 2))
           .replace('{input}', msg);
 
         const text = await generateWithGemini(finalPrompt);
@@ -302,7 +381,7 @@ app.post('/api/chatbot/batch', async (req, res) => {
         console.error(`Erro processando mensagem "${msg}":`, error);
         results.push({ 
           input: msg, 
-          response: null, 
+          response: `Erro ao processar: ${error.message}`, 
           success: false, 
           error: error.message 
         });
@@ -316,16 +395,18 @@ app.post('/api/chatbot/batch', async (req, res) => {
   }
 });
 
-// Endpoint para testar embeddings
+// Endpoint para testar embeddings com dimensão
 app.post('/api/test-embedding', async (req, res) => {
   const { text } = req.body;
   
   try {
-    const embedding = await generateEmbedding(text);
+    const embedding = await generateEmbedding(text || "teste de embedding");
     res.json({ 
       success: true, 
-      embedding: embedding.slice(0, 10), // Apenas os primeiros 10 valores para teste
-      dimensions: embedding.length 
+      embedding: embedding.slice(0, 5), // Apenas os primeiros 5 valores
+      dimensions: embedding.length,
+      expectedDimensions: EMBED_DIMENSIONS,
+      message: `Embedding gerado com ${embedding.length} dimensões (esperado: ${EMBED_DIMENSIONS})`
     });
   } catch (error) {
     console.error("Erro no teste de embedding:", error);
@@ -333,9 +414,41 @@ app.post('/api/test-embedding', async (req, res) => {
   }
 });
 
+// Endpoint para verificar estrutura da tabela documents
+app.get('/api/check-documents', async (req, res) => {
+  try {
+    const { data, error } = await supabaseClient
+      .from('documents')
+      .select('*')
+      .limit(1);
+    
+    if (error) {
+      return res.json({ 
+        success: false, 
+        error: error.message,
+        suggestion: 'Verifique se a tabela "documents" existe no Supabase'
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      sampleDocument: data[0] || null,
+      documentCount: data.length,
+      configuredDimensions: EMBED_DIMENSIONS,
+      message: data.length > 0 ? 'Tabela encontrada com dados' : 'Tabela existe mas está vazia'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 app.listen(port, () => {
   console.log(`Servidor backend rodando na porta ${port}`);
-  console.log(`Usando gemini-embedding-001 com rate limiting rigoroso`);
+  console.log(`Usando gemini-embedding-001 com ${EMBED_DIMENSIONS} dimensões`);
   console.log(`Rate limits: ${EMBED_RPM} RPM para embeddings, ${GEMINI_RPM} RPM para geração`);
+  console.log(`Endpoints disponíveis:`);
+  console.log(`- POST /api/test-embedding`);
+  console.log(`- GET /api/check-documents`);
+  console.log(`- POST /api/chatbot`);
 });
