@@ -11,6 +11,9 @@
     
     <style>
         :root {
+            /* Settings */
+            --base-font-size: 16px;
+
             /* Dark Theme (Default) */
             --primary-color: #00ff88;
             --primary-gradient: linear-gradient(135deg, #00ff88 0%, #00b8ff 100%);
@@ -59,6 +62,11 @@
             padding: 0;
         }
 
+        html {
+            font-size: var(--base-font-size);
+            transition: font-size 0.3s ease;
+        }
+
         body {
             font-family: 'Outfit', sans-serif;
             background: var(--bg-color);
@@ -68,6 +76,7 @@
             display: flex;
             flex-direction: column;
             overflow-x: hidden;
+            font-size: 1rem;
         }
 
         /* --- Header --- */
@@ -102,6 +111,7 @@
         .header-actions {
             display: flex;
             gap: 0.8rem;
+            align-items: center;
         }
 
         .header-actions button {
@@ -126,6 +136,14 @@
             background: var(--glass-highlight);
             color: var(--text-primary);
             border-color: var(--primary-color);
+        }
+
+        .font-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-right: 0.5rem;
+            padding-right: 0.8rem;
+            border-right: 1px solid var(--glass-border);
         }
 
         /* --- Connection Badge --- */
@@ -395,8 +413,8 @@
 
         .modal-content {
             background: var(--modal-bg);
-            width: 100%;
-            max-width: 500px;
+            width: 95%;
+            max-width: 700px;
             border-radius: var(--radius);
             border: 1px solid var(--glass-border);
             box-shadow: 0 20px 50px rgba(0,0,0,0.5);
@@ -577,6 +595,63 @@
             to { transform: rotate(360deg); }
         }
 
+        /* --- Preference Controls --- */
+        .radio-group {
+            display: flex;
+            background: rgba(128, 128, 128, 0.1);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 4px;
+            gap: 4px;
+        }
+
+        .radio-option {
+            flex: 1;
+            position: relative;
+        }
+
+        .radio-option input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .radio-option label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: all 0.3s ease;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+        }
+
+        .radio-option input:checked + label {
+            background: var(--primary-gradient);
+            color: var(--user-msg-text);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .radio-option label:hover {
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.05);
+        }
+
+        .radio-option input:checked + label:hover {
+            opacity: 0.9;
+        }
+        
+        .radio-option label i {
+            margin-right: 6px;
+        }
+
         /* --- Footer --- */
         footer {
             text-align: center;
@@ -606,6 +681,21 @@
             .form-grid {
                 grid-template-columns: 1fr;
             }
+            
+            .header-actions .status-label {
+                display: none;
+            }
+            
+            .font-controls {
+                padding-right: 0.5rem;
+            }
+            
+            .font-controls button {
+                padding: 0.4rem;
+                min-width: 36px;
+                height: 36px;
+                font-size: 0.9rem;
+            }
         }
     </style>
 </head>
@@ -622,8 +712,9 @@
                 <span class="status-label d-none d-md-inline">Desconectado</span>
             </div>
 
-            <button onclick="toggleTheme()" aria-label="Alternar Tema" id="theme-toggle-btn">
-                <i class="fa-solid fa-moon"></i>
+            <button onclick="togglePreferences()" title="Preferências">
+                <i class="fa-solid fa-gear"></i>
+                <span class="d-none d-md-inline">Preferências</span>
             </button>
             <button onclick="toggleSettings()">
                 <i class="fa-solid fa-database"></i>
@@ -676,7 +767,7 @@
                         <label for="dbHost">Host</label>
                         <input type="text" id="dbHost" class="form-control" placeholder="ex: localhost">
                     </div>
-                    <div class="form-group full-width">
+                    <div class="form-group">
                         <label for="dbDatabase">Database</label>
                         <input type="text" id="dbDatabase" class="form-control" placeholder="Nome do banco">
                     </div>
@@ -686,7 +777,7 @@
                     </div>
                     <div class="form-group">
                         <label for="dbPort">Porta</label>
-                        <input type="number" id="dbPort" class="form-control" placeholder="5432">
+                        <input type="text" inputmode="numeric" pattern="[0-9]*" id="dbPort" class="form-control" placeholder="5432" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                     </div>
                     <div class="form-group full-width">
                         <label for="dbTables">Tabelas (separadas por vírgula)</label>
@@ -701,40 +792,106 @@
         </div>
     </div>
 
+    <!-- Preferences Modal -->
+    <div class="modal-overlay" id="preferences-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Preferências do Usuário</h2>
+                <button class="close-modal" onclick="togglePreferences()"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Tema</label>
+                    <div class="radio-group theme-selector">
+                        <div class="radio-option">
+                            <input type="radio" name="theme" id="theme-dark" value="dark" onchange="setTheme('dark')">
+                            <label for="theme-dark"><i class="fa-solid fa-moon"></i> Escuro</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="theme" id="theme-light" value="light" onchange="setTheme('light')">
+                            <label for="theme-light"><i class="fa-solid fa-sun"></i> Claro</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Tamanho da Fonte</label>
+                    <div class="radio-group font-selector">
+                        <div class="radio-option">
+                            <input type="radio" name="fontsize" id="font-small" value="14" onchange="setFontSize(14)">
+                            <label for="font-small">Pequeno</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="fontsize" id="font-medium" value="16" onchange="setFontSize(16)">
+                            <label for="font-medium">Médio</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="fontsize" id="font-large" value="18" onchange="setFontSize(18)">
+                            <label for="font-large">Grande</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="fontsize" id="font-xlarge" value="20" onchange="setFontSize(20)">
+                            <label for="font-xlarge">Extra</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // --- Theme Management ---
-        function toggleTheme() {
+        // --- Preferences Management ---
+        function togglePreferences() {
+            const modal = document.getElementById('preferences-modal');
+            modal.classList.toggle('active');
+        }
+
+        function setTheme(themeName) {
             const body = document.body;
-            body.classList.toggle('light-theme');
-            
-            const isLight = body.classList.contains('light-theme');
-            localStorage.setItem('theme', isLight ? 'light' : 'dark');
-            updateThemeIcon(isLight);
-        }
-
-        function updateThemeIcon(isLight) {
-            const btn = document.getElementById('theme-toggle-btn');
-            const icon = btn.querySelector('i');
-            if (isLight) {
-                icon.className = 'fa-solid fa-sun';
-                // Adjust logo gradient for light theme if needed, or keep as is
+            if (themeName === 'light') {
+                body.classList.add('light-theme');
+                document.getElementById('theme-light').checked = true;
             } else {
-                icon.className = 'fa-solid fa-moon';
+                body.classList.remove('light-theme');
+                document.getElementById('theme-dark').checked = true;
             }
+            localStorage.setItem('theme', themeName);
         }
 
-        // Initialize Theme
-        (function initTheme() {
+        function setFontSize(size) {
+            const root = document.documentElement;
+            root.style.setProperty('--base-font-size', size + 'px');
+            localStorage.setItem('flexTutorFontSize', size);
+            
+            // Update radio button state
+            const radio = document.querySelector(`input[name="fontsize"][value="${size}"]`);
+            if (radio) radio.checked = true;
+        }
+
+        // Initialize Settings
+        (function initSettings() {
+            // Theme
             const savedTheme = localStorage.getItem('theme');
             const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
             
             if (savedTheme === 'light' || (!savedTheme && prefersLight)) {
-                document.body.classList.add('light-theme');
-                updateThemeIcon(true);
+                setTheme('light');
             } else {
-                updateThemeIcon(false);
+                setTheme('dark');
             }
+
+            // Font Size
+            let savedFontSize = localStorage.getItem('flexTutorFontSize');
+            if (!savedFontSize) savedFontSize = 16; // Default
+            setFontSize(savedFontSize);
         })();
+
+        // Close preferences modal when clicking outside
+        document.getElementById('preferences-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                togglePreferences();
+            }
+        });
 
         // --- UI Interaction ---
         
