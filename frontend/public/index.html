@@ -128,6 +128,50 @@
             border-color: var(--primary-color);
         }
 
+        /* --- Connection Badge --- */
+        .connection-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: rgba(128, 128, 128, 0.1);
+            border: 1px solid var(--glass-border);
+            margin-right: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .connection-badge .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-secondary);
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+
+        .connection-badge.connected {
+            background: rgba(0, 255, 136, 0.1);
+            border-color: rgba(0, 255, 136, 0.2);
+            color: var(--success);
+        }
+
+        .connection-badge.connected .status-dot {
+            background-color: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        .connection-badge.disconnected {
+            color: var(--text-secondary);
+        }
+
+        .connection-badge.loading .status-dot {
+            background-color: #ffd700;
+            animation: pulse 1s infinite;
+        }
+
         /* --- Main Layout --- */
         main {
             flex: 1;
@@ -572,12 +616,18 @@
             <h1>FlexTutor</h1>
         </a>
         <div class="header-actions">
+            <!-- Connection Status Indicator -->
+            <div id="header-connection-status" class="connection-badge disconnected" title="Banco de Dados: Desconectado">
+                <span class="status-dot"></span>
+                <span class="status-label d-none d-md-inline">Desconectado</span>
+            </div>
+
             <button onclick="toggleTheme()" aria-label="Alternar Tema" id="theme-toggle-btn">
                 <i class="fa-solid fa-moon"></i>
             </button>
             <button onclick="toggleSettings()">
                 <i class="fa-solid fa-database"></i>
-                <span class="d-none d-md-inline">Configurar Banco</span>
+                <span class="d-none d-md-inline">Configurar</span>
             </button>
         </div>
     </header>
@@ -647,11 +697,6 @@
                 <button class="btn btn-primary" onclick="testConnection()" id="test-btn">
                     <i class="fa-solid fa-plug"></i> Testar Conexão
                 </button>
-
-                <div id="connection-status" class="status-container">
-                    <div class="status-indicator"></div>
-                    <span>Não conectado</span>
-                </div>
             </div>
         </div>
     </div>
@@ -714,6 +759,25 @@
 
         // --- Core Logic (Preserved & Enhanced) ---
 
+        function updateConnectionBadge(status, text) {
+            const badge = document.getElementById('header-connection-status');
+            const label = badge.querySelector('.status-label');
+            
+            badge.className = 'connection-badge'; // reset classes
+            label.textContent = text;
+            
+            if (status === 'connected') {
+                badge.classList.add('connected');
+                badge.title = "Banco de Dados: Conectado e pronto para uso";
+            } else if (status === 'loading') {
+                badge.classList.add('loading');
+                badge.title = "Verificando conexão...";
+            } else {
+                badge.classList.add('disconnected');
+                badge.title = status === 'error' ? "Erro na conexão" : "Banco de Dados: Desconectado (Modo Básico)";
+            }
+        }
+
         async function testConnection() {
             const dbUser = document.getElementById('dbUser').value;
             const dbHost = document.getElementById('dbHost').value;
@@ -721,15 +785,11 @@
             const dbPassword = document.getElementById('dbPassword').value;
             const dbPort = document.getElementById('dbPort').value;
             
-            const statusElement = document.getElementById('connection-status');
-            const statusIndicator = statusElement.querySelector('.status-indicator');
-            const statusText = statusElement.querySelector('span');
             const testBtn = document.getElementById('test-btn');
             const originalBtnContent = testBtn.innerHTML;
 
             // UI Loading State
-            statusIndicator.className = 'status-indicator status-loading';
-            statusText.textContent = 'Testando conexão...';
+            updateConnectionBadge('loading', 'Verificando...');
             testBtn.disabled = true;
             testBtn.innerHTML = '<div class="spinner"></div> Conectando...';
 
@@ -749,21 +809,29 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    statusIndicator.className = 'status-indicator status-connected';
-                    statusText.textContent = 'Conexão bem-sucedida!';
-                    statusText.style.color = 'var(--success)';
+                    updateConnectionBadge('connected', 'Conectado');
+                    testBtn.innerHTML = '<i class="fa-solid fa-check"></i> Sucesso!';
+                    setTimeout(() => {
+                        testBtn.innerHTML = originalBtnContent;
+                        testBtn.disabled = false;
+                    }, 2000);
                 } else {
-                    statusIndicator.className = 'status-indicator status-error';
-                    statusText.textContent = 'Falha: ' + data.message;
-                    statusText.style.color = 'var(--danger)';
+                    updateConnectionBadge('error', 'Erro');
+                    testBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Falha';
+                    alert('Falha na conexão: ' + data.message);
+                    setTimeout(() => {
+                        testBtn.innerHTML = originalBtnContent;
+                        testBtn.disabled = false;
+                    }, 2000);
                 }
             } catch (error) {
-                statusIndicator.className = 'status-indicator status-error';
-                statusText.textContent = 'Erro de rede: ' + error.message;
-                statusText.style.color = 'var(--danger)';
-            } finally {
-                testBtn.disabled = false;
-                testBtn.innerHTML = originalBtnContent;
+                updateConnectionBadge('error', 'Erro');
+                testBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Erro';
+                alert('Erro de rede: ' + error.message);
+                setTimeout(() => {
+                    testBtn.innerHTML = originalBtnContent;
+                    testBtn.disabled = false;
+                }, 2000);
             }
         }
 
@@ -774,16 +842,11 @@
             const dbPassword = document.getElementById('dbPassword').value;
             const dbPort = document.getElementById('dbPort').value;
             const dbTables = document.getElementById('dbTables').value;
-            const statusElement = document.getElementById('connection-status');
-            const statusText = statusElement.querySelector('span');
 
-            if (!dbTables) {
-                statusText.textContent = 'Por favor, insira os nomes das tabelas.';
-                statusText.style.color = 'var(--danger)';
-                // Open settings if tables are missing
-                if(!document.getElementById('settings-modal').classList.contains('active')) {
-                    toggleSettings();
-                }
+            // Check for missing info - SILENT FAIL (Allow offline mode)
+            if (!dbUser || !dbHost || !dbDatabase || !dbTables) {
+                console.log('Modo desconectado: Informações de banco de dados incompletas.');
+                updateConnectionBadge('disconnected', 'Desconectado');
                 return null;
             }
 
@@ -803,13 +866,16 @@
 
                 const data = await response.json();
                 if (data.success) {
+                    updateConnectionBadge('connected', 'Conectado');
                     return data.data; 
                 } else {
                     console.error('Erro ao carregar dados:', data.message);
+                    updateConnectionBadge('error', 'Erro na Consulta');
                     return null;
                 }
             } catch (error) {
                 console.error('Erro na requisição:', error);
+                updateConnectionBadge('error', 'Erro de Rede');
                 return null;
             }
         }
