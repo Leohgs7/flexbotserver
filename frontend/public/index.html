@@ -3,144 +3,770 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FlexSim AI Assistant</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>FlexTutor</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
         :root {
-            --primary-gradient: linear-gradient(135deg, #c09f6f 0%, #ff9700 100%);
-            --background-gradient: linear-gradient(45deg, #0a0a0a 0%, #1a1a1a 100%);
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
+            /* Dark Theme (Default) */
+            --primary-color: #00ff88;
+            --primary-gradient: linear-gradient(135deg, #00ff88 0%, #00b8ff 100%);
+            --secondary-gradient: linear-gradient(135deg, #c09f6f 0%, #ff9700 100%);
+            --bg-color: #0a0a0a;
+            --bg-gradient: radial-gradient(circle at top right, #1a1a1a 0%, #0a0a0a 100%);
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-highlight: rgba(255, 255, 255, 0.1);
             --text-primary: #ffffff;
             --text-secondary: #a0a0a0;
+            --danger: #ff4646;
+            --success: #00ff88;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --radius: 16px;
+            --input-bg: rgba(0, 0, 0, 0.3);
+            --modal-bg: #151515;
+            --bot-msg-bg: rgba(255, 255, 255, 0.05);
+            --user-msg-text: #000;
         }
+
+        /* Light Theme */
+        body.light-theme {
+            --primary-color: #005A9C; /* Azul Acadêmico/UFPE */
+            --primary-gradient: linear-gradient(135deg, #005A9C 0%, #007bb5 100%);
+            --secondary-gradient: linear-gradient(135deg, #008040 0%, #4CAF50 100%); /* Verde Ambiental */
+            --bg-color: #f0f2f5;
+            --bg-gradient: linear-gradient(135deg, #f0f2f5 0%, #e4e9f2 100%);
+            --glass-bg: rgba(255, 255, 255, 0.85);
+            --glass-border: rgba(0, 0, 0, 0.08);
+            --glass-highlight: rgba(0, 0, 0, 0.05);
+            --text-primary: #1a1a1a;
+            --text-secondary: #555555;
+            --danger: #dc3545;
+            --success: #198754;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --modal-bg: #ffffff;
+            --bot-msg-bg: rgba(0, 0, 0, 0.05);
+            --user-msg-text: #fff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
-            font-family: 'Inter', sans-serif;
-            background: var(--background-gradient);
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-color);
+            background-image: var(--bg-gradient);
             color: var(--text-primary);
             min-height: 100vh;
-            margin: 0;
-            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
         }
-        .chat-container { max-width: 1000px; margin: 0 auto; background: var(--glass-bg); backdrop-filter: blur(12px); border-radius: 20px; border: 1px solid var(--glass-border); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); overflow: hidden; }
-        .chat-header { padding: 1.5rem 2rem; background: var(--glass-bg); border-bottom: 1px solid var(--glass-border); position: relative; }
-        .chat-header h1 { font-size: 1.5rem; font-weight: 600; margin: 0; background: var(--primary-gradient); background-clip: text; -webkit-text-fill-color: transparent; }
-        .connection-form { padding: 2rem; background: rgba(0, 0, 0, 0.3); border-bottom: 1px solid var(--glass-border); }
-        .connection-form h2 { color: var(--text-primary); font-size: 1.1rem; margin-bottom: 1.5rem; }
-        .connection-form input { background: rgba(0, 0, 0, 0.4); border: 1px solid var(--glass-border); color: var(--text-primary); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; transition: all 0.3s ease; }
-        .connection-form input:focus { border-color: #00ff88; box-shadow: 0 0 0 3px rgba(0, 255, 135, 0.1); }
-        .connection-form button { background: var(--primary-gradient); border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; transition: transform 0.2s ease; cursor: pointer; }
-        .connection-form button:hover { transform: translateY(-1px); }
-        /* MUDANÇA 3: Estilo para os botões de conexões salvas */
-        .saved-connection-btn { background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: var(--text-secondary); padding: 0.5rem 1rem; margin-right: 0.5rem; margin-top: 0.5rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer; }
-        .saved-connection-btn:hover { background: var(--primary-gradient); color: #000; }
-        .chat-messages { height: 60vh; overflow-y: auto; padding: 2rem; position: relative; }
-        .message { display: flex; gap: 1rem; margin-bottom: 1.5rem; animation: messageAppear 0.3s ease-out; }
-        @keyframes messageAppear { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .message.user { flex-direction: row-reverse; }
-        .message-content { max-width: 70%; padding: 1rem 1.25rem; border-radius: 15px; line-height: 1.5; font-size: 0.95rem; position: relative; backdrop-filter: blur(10px); }
-        .bot .message-content { background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-border); border-radius: 15px 15px 15px 5px; }
-        .user .message-content { background: var(--primary-gradient); color: #000; border-radius: 15px 15px 5px 15px; font-weight: 500; }
-        .chat-input { padding: 1.5rem 2rem; background: rgba(0, 0, 0, 0.3); border-top: 1px solid var(--glass-border); }
-        .input-group { display: flex; gap: 1rem; align-items: center; }
-        .input-group input { flex: 1; padding: 1rem; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--glass-border); color: var(--text-primary); border-radius: 12px; font-size: 1rem; transition: all 0.3s ease; }
-        .input-group input:focus { border-color: #00ff88; box-shadow: 0 0 0 3px rgba(0, 255, 135, 0.1); }
-        .input-group button { background: var(--primary-gradient); border: none; padding: 1rem 1.5rem; border-radius: 12px; color: #000; font-weight: 600; cursor: pointer; transition: all 0.3s ease; }
-        .input-group button:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(0, 255, 135, 0.3); }
-        #connection-status { margin-top: 1rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
-        .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-        .status-connected { background: #00ff88; box-shadow: 0 0 8px #00ff8877; }
-        .status-error { background: #ff4646; box-shadow: 0 0 8px #ff464677; }
-        .bot-response { white-space: pre-wrap; line-height: 1.6; }
+
+        /* --- Header --- */
+        header {
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            transition: background 0.3s;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            text-decoration: none;
+        }
+
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: var(--text-primary);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 0.8rem;
+        }
+
+        .header-actions button {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            padding: 0.6rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font-family: inherit;
+            font-weight: 500;
+            min-width: 44px;
+            height: 44px;
+        }
+
+        .header-actions button:hover {
+            background: var(--glass-highlight);
+            color: var(--text-primary);
+            border-color: var(--primary-color);
+        }
+
+        /* --- Main Layout --- */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 2rem;
+            height: calc(100vh - 80px); /* Adjust based on header height */
+        }
+
+        /* --- Chat Interface --- */
+        .chat-interface {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            display: flex;
+            gap: 1rem;
+            max-width: 80%;
+            animation: fadeIn 0.4s ease-out forwards;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: var(--glass-highlight);
+            border: 1px solid var(--glass-border);
+            color: var(--text-primary);
+        }
+
+        .message.user .avatar {
+            background: var(--primary-gradient);
+            color: #fff;
+        }
+
+        .message.bot .avatar {
+            background: rgba(128, 128, 128, 0.1);
+        }
+
+        .message-content {
+            padding: 1.25rem;
+            border-radius: 18px;
+            line-height: 1.6;
+            font-size: 1rem;
+            position: relative;
+            word-wrap: break-word;
+        }
+
+        .message.bot .message-content {
+            background: var(--bot-msg-bg);
+            border: 1px solid var(--glass-border);
+            border-top-left-radius: 4px;
+            color: var(--text-primary);
+        }
+
+        .message.user .message-content {
+            background: var(--primary-gradient);
+            color: var(--user-msg-text);
+            font-weight: 500;
+            border-top-right-radius: 4px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        /* --- Code Blocks in Messages --- */
+        .bot-response pre {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+        
+        .bot-response code {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            color: #fff;
+        }
+        
+        .bot-response pre code {
+            background: transparent;
+            padding: 0;
+        }
+
+        .bot-response ul, .bot-response ol {
+            padding-left: 1.5rem;
+            margin: 0.5rem 0;
+        }
+        
+        .bot-response li {
+            margin-bottom: 0.25rem;
+        }
+
+        /* --- Chat Input --- */
+        .chat-input-area {
+            padding: 1.5rem;
+            background: var(--glass-highlight);
+            border-top: 1px solid var(--glass-border);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 1rem;
+            position: relative;
+        }
+
+        .input-group input {
+            flex: 1;
+            background: var(--input-bg);
+            border: 1px solid var(--glass-border);
+            padding: 1.2rem 1.5rem;
+            border-radius: 50px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(0, 90, 156, 0.1);
+            background: var(--input-bg);
+        }
+
+        .input-group button {
+            background: var(--primary-gradient);
+            border: none;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--user-msg-text);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .input-group button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(0, 90, 156, 0.4);
+        }
+        
+        .input-group button:active {
+            transform: scale(0.95);
+        }
+
+        .input-group button:disabled {
+            background: var(--text-secondary);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* --- Settings Modal --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-content {
+            background: var(--modal-bg);
+            width: 100%;
+            max-width: 500px;
+            border-radius: var(--radius);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--glass-highlight);
+        }
+
+        .modal-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .close-modal {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .close-modal:hover {
+            color: var(--danger);
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .form-control {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--glass-border);
+            padding: 0.8rem;
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 0.9rem;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-gradient);
+            color: var(--user-msg-text);
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: wait;
+        }
+
+        .status-container {
+            margin-top: 1rem;
+            padding: 0.8rem;
+            background: var(--glass-highlight);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            transition: all 0.3s;
+        }
+
+        .status-connected { background: var(--success); box-shadow: 0 0 10px var(--success); }
+        .status-error { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+        .status-loading { background: #ffd700; animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
+        /* --- Loaders --- */
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            width: fit-content;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0,0,0,0.1);
+            border-radius: 50%;
+            border-top-color: #000;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* --- Footer --- */
+        footer {
+            text-align: center;
+            padding: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--glass-border);
+            margin-top: auto;
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 768px) {
+            main {
+                padding: 1rem;
+                height: calc(100vh - 70px);
+            }
+
+            .chat-messages {
+                padding: 1rem;
+            }
+
+            .modal-content {
+                width: 95%;
+                margin: 0 auto;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <h1>FlexSim AI Assistant</h1>
+
+    <header>
+        <a href="#" class="logo">
+            <h1>FlexTutor</h1>
+        </a>
+        <div class="header-actions">
+            <button onclick="toggleTheme()" aria-label="Alternar Tema" id="theme-toggle-btn">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+            <button onclick="toggleSettings()">
+                <i class="fa-solid fa-database"></i>
+                <span class="d-none d-md-inline">Configurar Banco</span>
+            </button>
         </div>
-        <div class="connection-form">
-            <h2>Database Configuration</h2>
-            <div class="row g-3">
-                <div class="col-md-6"><input type="text" id="dbUser" placeholder="Username" class="form-control" /></div>
-                <div class="col-md-6"><input type="text" id="dbHost" placeholder="Host" class="form-control" /></div>
-                <div class="col-12"><input type="text" id="dbDatabase" placeholder="Database" class="form-control" /></div>
-                <div class="col-md-6"><input type="password" id="dbPassword" placeholder="Password" class="form-control" /></div>
-                <div class="col-md-3"><input type="number" id="dbPort" placeholder="Port" class="form-control" /></div>
-                <div class="col-md-3"><input type="text" id="dbTables" placeholder="Tables (ex: table1, table2)" class="form-control" /></div>
+    </header>
+
+    <main>
+        <section class="chat-interface">
+            <div class="chat-messages" id="chatbot-messages">
+                <!-- Welcome Message -->
+                <div class="message bot">
+                    <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                    <div class="message-content">
+                        Olá! Sou o FlexTutor. Como posso ajudar você hoje?
+                    </div>
+                </div>
             </div>
-            <button class="btn btn-primary mt-3" onclick="testConnection()">Test Connection</button>
-            <div id="connection-status">
-                <div class="status-indicator"></div>
-                <span>Not connected</span>
+            
+            <div class="chat-input-area">
+                <div class="input-group">
+                    <input type="text" id="chatbot-input" placeholder="Pergunte sobre FlexSim, modelos ou dados..." autocomplete="off">
+                    <button onclick="sendMessage()" id="send-btn" aria-label="Enviar mensagem">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
             </div>
-            <div id="saved-connections-container" class="mt-3">
-                <small>Acesso Rápido:</small>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 FlexTutor. Criado por Leandro Silva (<a href="mailto:leandro.hgsilva@ufpe.br" style="color: var(--primary-color); text-decoration: none;">leandro.hgsilva@ufpe.br</a>).</p>
+    </footer>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Configuração do Banco de Dados</h2>
+                <button class="close-modal" onclick="toggleSettings()"><i class="fa-solid fa-times"></i></button>
             </div>
-        </div>
-        <div class="chat-messages" id="chatbot-messages"></div>
-        <div class="chat-input">
-            <div class="input-group">
-                <input type="text" id="chatbot-input" placeholder="Pergunte sobre FlexSim ou peça uma análise dos dados..." />
-                <button onclick="sendMessage()">Send ➔</button>
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="dbUser">Usuário</label>
+                        <input type="text" id="dbUser" class="form-control" placeholder="ex: postgres">
+                    </div>
+                    <div class="form-group">
+                        <label for="dbHost">Host</label>
+                        <input type="text" id="dbHost" class="form-control" placeholder="ex: localhost">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="dbDatabase">Database</label>
+                        <input type="text" id="dbDatabase" class="form-control" placeholder="Nome do banco">
+                    </div>
+                    <div class="form-group">
+                        <label for="dbPassword">Senha</label>
+                        <input type="password" id="dbPassword" class="form-control" placeholder="••••••">
+                    </div>
+                    <div class="form-group">
+                        <label for="dbPort">Porta</label>
+                        <input type="number" id="dbPort" class="form-control" placeholder="5432">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="dbTables">Tabelas (separadas por vírgula)</label>
+                        <input type="text" id="dbTables" class="form-control" placeholder="ex: tabela1, tabela2">
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" onclick="testConnection()" id="test-btn">
+                    <i class="fa-solid fa-plug"></i> Testar Conexão
+                </button>
+
+                <div id="connection-status" class="status-container">
+                    <div class="status-indicator"></div>
+                    <span>Não conectado</span>
+                </div>
             </div>
         </div>
     </div>
 
-    
-    
     <script>
-        const API_BASE_URL = 'https://flexbotserver.onrender.com';
+        // --- Theme Management ---
+        function toggleTheme() {
+            const body = document.body;
+            body.classList.toggle('light-theme');
+            
+            const isLight = body.classList.contains('light-theme');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            updateThemeIcon(isLight);
+        }
+
+        function updateThemeIcon(isLight) {
+            const btn = document.getElementById('theme-toggle-btn');
+            const icon = btn.querySelector('i');
+            if (isLight) {
+                icon.className = 'fa-solid fa-sun';
+                // Adjust logo gradient for light theme if needed, or keep as is
+            } else {
+                icon.className = 'fa-solid fa-moon';
+            }
+        }
+
+        // Initialize Theme
+        (function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+            
+            if (savedTheme === 'light' || (!savedTheme && prefersLight)) {
+                document.body.classList.add('light-theme');
+                updateThemeIcon(true);
+            } else {
+                updateThemeIcon(false);
+            }
+        })();
+
+        // --- UI Interaction ---
         
-        //MUDANÇA 1: Adiciona um "ouvinte" para a tecla Enter no campo de input.
-        document.getElementById('chatbot-input').addEventListener('keydown', function(event) {
-            if (event.key === 'Enter') {
+        function toggleSettings() {
+            const modal = document.getElementById('settings-modal');
+            modal.classList.toggle('active');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('settings-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                toggleSettings();
+            }
+        });
+
+        // Allow sending message with Enter key
+        document.getElementById('chatbot-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
                 sendMessage();
             }
         });
 
-        // MUDANÇA 3: Carrega as conexões salvas assim que a página é aberta.
-        document.addEventListener('DOMContentLoaded', loadAndDisplaySavedConnections);
-
+        // --- Core Logic (Preserved & Enhanced) ---
 
         async function testConnection() {
-            const credentials = {
-                user: document.getElementById('dbUser').value,
-                host: document.getElementById('dbHost').value,
-                database: document.getElementById('dbDatabase').value,
-                password: document.getElementById('dbPassword').value,
-                port: document.getElementById('dbPort').value,
-                tables: document.getElementById('dbTables').value,
-            };
-
+            const dbUser = document.getElementById('dbUser').value;
+            const dbHost = document.getElementById('dbHost').value;
+            const dbDatabase = document.getElementById('dbDatabase').value;
+            const dbPassword = document.getElementById('dbPassword').value;
+            const dbPort = document.getElementById('dbPort').value;
+            
             const statusElement = document.getElementById('connection-status');
             const statusIndicator = statusElement.querySelector('.status-indicator');
-            statusIndicator.className = 'status-indicator';
-            statusElement.querySelector('span').textContent = 'Testing connection...';
+            const statusText = statusElement.querySelector('span');
+            const testBtn = document.getElementById('test-btn');
+            const originalBtnContent = testBtn.innerHTML;
+
+            // UI Loading State
+            statusIndicator.className = 'status-indicator status-loading';
+            statusText.textContent = 'Testando conexão...';
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<div class="spinner"></div> Conectando...';
 
             try {
-                // MUDANÇA 4: Usa a constante da URL base.
-                const response = await fetch(`${API_BASE_URL}/api/test-connection`, {
+                const response = await fetch('https://flexbotserver.onrender.com/api/test-connection', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(credentials),
+                    body: JSON.stringify({
+                        user: dbUser,
+                        host: dbHost,
+                        database: dbDatabase,
+                        password: dbPassword,
+                        port: dbPort,
+                    }),
                 });
+
                 const data = await response.json();
+                
                 if (data.success) {
-                    statusIndicator.classList.add('status-connected');
-                    statusElement.querySelector('span').textContent = 'Connection successful!';
-                    // MUDANÇA 3: Salva a conexão no sucesso.
-                    saveConnection(credentials);
+                    statusIndicator.className = 'status-indicator status-connected';
+                    statusText.textContent = 'Conexão bem-sucedida!';
+                    statusText.style.color = 'var(--success)';
                 } else {
-                    statusIndicator.classList.add('status-error');
-                    statusElement.querySelector('span').textContent = 'Connection failed: ' + data.message;
+                    statusIndicator.className = 'status-indicator status-error';
+                    statusText.textContent = 'Falha: ' + data.message;
+                    statusText.style.color = 'var(--danger)';
                 }
-                } catch (error) {
-                connectionStatus.textContent = 'Erro ao testar conexão: ' + error.message;
-                connectionStatus.style.color = 'red';
-                }
+            } catch (error) {
+                statusIndicator.className = 'status-indicator status-error';
+                statusText.textContent = 'Erro de rede: ' + error.message;
+                statusText.style.color = 'var(--danger)';
+            } finally {
+                testBtn.disabled = false;
+                testBtn.innerHTML = originalBtnContent;
+            }
         }
+
         async function loadDataFromDatabase() {
             const dbUser = document.getElementById('dbUser').value;
             const dbHost = document.getElementById('dbHost').value;
@@ -148,16 +774,21 @@
             const dbPassword = document.getElementById('dbPassword').value;
             const dbPort = document.getElementById('dbPort').value;
             const dbTables = document.getElementById('dbTables').value;
-            const connectionStatus = document.getElementById('connection-status').querySelector('span');
+            const statusElement = document.getElementById('connection-status');
+            const statusText = statusElement.querySelector('span');
 
-            // MUDANÇA 2: Se não houver tabelas, não consideramos um erro fatal aqui. Retornamos null.
-            if (!dbUser || !dbHost || !dbDatabase || !dbTables) {
+            if (!dbTables) {
+                statusText.textContent = 'Por favor, insira os nomes das tabelas.';
+                statusText.style.color = 'var(--danger)';
+                // Open settings if tables are missing
+                if(!document.getElementById('settings-modal').classList.contains('active')) {
+                    toggleSettings();
+                }
                 return null;
             }
 
             try {
-                // MUDANÇA 4: Usa a constante da URL base.
-                const response = await fetch(`${API_BASE_URL}/api/query`, {
+                const response = await fetch('https://flexbotserver.onrender.com/api/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -170,57 +801,71 @@
                     }),
                 });
 
-                if (!response.ok) { // Verifica se a resposta da API foi um erro (4xx, 5xx)
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || 'Falha na API');
-                }
-
                 const data = await response.json();
                 if (data.success) {
-                    connectionStatus.textContent = 'Dados carregados com sucesso!';
-                    return data.data;
+                    return data.data; 
                 } else {
-                    throw new Error(data.message);
+                    console.error('Erro ao carregar dados:', data.message);
+                    return null;
                 }
             } catch (error) {
-                connectionStatus.textContent = 'Erro ao carregar dados: ' + error.message;
+                console.error('Erro na requisição:', error);
                 return null;
             }
         }
 
-
-    // MUDANÇA 2: A função sendMessage foi reestruturada para funcionar com ou sem dados do DB.
         async function sendMessage() {
             const input = document.getElementById('chatbot-input');
+            const sendBtn = document.getElementById('send-btn');
             const message = input.value.trim();
+
             if (!message) return;
+
+            // Disable input while processing
+            input.disabled = true;
+            sendBtn.disabled = true;
 
             displayMessage(message, 'user');
             input.value = '';
 
-            // Tenta carregar os dados do DB, mas não para o processo se falhar.
-            const dbData = await loadDataFromDatabase();
+            // Show typing indicator
+            const typingId = showTypingIndicator();
 
-            // O chatbot é chamado independentemente de dbData existir ou não.
             try {
-                // MUDANÇA 4: Usa a constante da URL base.
-                const response = await fetch(`${API_BASE_URL}/api/chatbot`, {
+                // Load context data
+                const dbData = await loadDataFromDatabase();
+                
+                // If dbData is null (and it was required/failed), user might want to know, 
+                // but the original logic continued. We'll proceed but log it.
+
+                const response = await fetch('https://flexbotserver.onrender.com/api/chatbot', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message,
-                        dbData, // Envia os dados do DB (pode ser null se não foram carregados)
+                        dbData,
                     }),
                 });
 
                 const data = await response.json();
+                
+                // Remove typing indicator
+                removeTypingIndicator(typingId);
+
                 if (data.success) {
                     displayMessage(data.response, 'bot');
                 } else {
-                    displayMessage('Erro ao processar a mensagem.', 'bot');
+                    displayMessage('Desculpe, ocorreu um erro ao processar sua mensagem.', 'bot');
                 }
             } catch (error) {
-                displayMessage('Erro ao conectar ao backend.', 'bot');
+                removeTypingIndicator(typingId);
+                displayMessage('Erro ao conectar ao servidor. Verifique sua internet.', 'bot');
+                console.error(error);
+            } finally {
+                // Re-enable input
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
             }
         }
 
@@ -228,9 +873,16 @@
             const messagesDiv = document.getElementById('chatbot-messages');
             const messageElement = document.createElement('div');
             messageElement.className = `message ${sender}`;
+
+            // Avatar
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'avatar';
+            avatarDiv.innerHTML = sender === 'bot' ? '<i class="fa-solid fa-robot"></i>' : '<i class="fa-solid fa-user"></i>';
+
+            // Content
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-
+            
             if (sender === 'bot') {
                 contentDiv.classList.add('bot-response');
                 contentDiv.innerHTML = formatResponse(message);
@@ -238,70 +890,91 @@
                 contentDiv.textContent = message;
             }
 
-            messageElement.appendChild(contentDiv);
+            // Assemble
+            if (sender === 'user') {
+                messageElement.appendChild(contentDiv);
+                messageElement.appendChild(avatarDiv);
+            } else {
+                messageElement.appendChild(avatarDiv);
+                messageElement.appendChild(contentDiv);
+            }
+
             messagesDiv.appendChild(messageElement);
+            
+            // Scroll to bottom
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            const messagesDiv = document.getElementById('chatbot-messages');
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
+        function showTypingIndicator() {
+            const messagesDiv = document.getElementById('chatbot-messages');
+            const id = 'typing-' + Date.now();
+            
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message bot';
+            messageElement.id = id;
+            
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'avatar';
+            avatarDiv.innerHTML = '<i class="fa-solid fa-robot"></i>';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.style.padding = '0.8rem 1rem';
+            
+            const indicator = document.createElement('div');
+            indicator.className = 'typing-indicator';
+            indicator.innerHTML = `
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            `;
+            
+            contentDiv.appendChild(indicator);
+            messageElement.appendChild(avatarDiv);
+            messageElement.appendChild(contentDiv);
+            
+            messagesDiv.appendChild(messageElement);
+            scrollToBottom();
+            
+            return id;
+        }
+
+        function removeTypingIndicator(id) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.remove();
+            }
+        }
+
         function formatResponse(text) {
-            return text
+            if (!text) return '';
+            
+            // Protect code blocks from being processed by other regex first
+            const codeBlocks = [];
+            let processedText = text.replace(/```([\s\S]*?)```/g, (match, code) => {
+                codeBlocks.push(code);
+                return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+            });
+
+            // Process formatting
+            processedText = processedText
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                 .replace(/(•|➔)/g, '•')
-                .replace(/(\d+\.\s)/g, '<br>$1')
-                .replace(/`(.*?)`/g, '<code>$1</code>');
-        }
+                .replace(/(\d+\.\s)/g, '<br><strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
 
-        // --- MUDANÇA 3: NOVAS FUNÇÕES PARA GERENCIAR CREDENCIAIS SALVAS ---
-        
-        function saveConnection(credentials) {
-            // Pega as conexões existentes ou cria um array vazio.
-            let connections = JSON.parse(localStorage.getItem('flexsimConnections')) || [];
-            // Cria um nome único para a conexão para evitar duplicatas.
-            const connectionId = `${credentials.user}@${credentials.host}/${credentials.database}`;
-            
-            // Verifica se a conexão já existe. Se sim, remove a antiga.
-            connections = connections.filter(c => c.id !== connectionId);
-            
-            // Adiciona a nova conexão (ou atualizada) no início da lista.
-            connections.unshift({
-                id: connectionId,
-                name: `${credentials.database}`, // Nome do botão
-                data: credentials // Dados completos
+            // Restore code blocks
+            processedText = processedText.replace(/__CODE_BLOCK_(\d+)__/g, (match, index) => {
+                return `<pre><code>${codeBlocks[index].trim()}</code></pre>`;
             });
-
-            // Mantém apenas as 5 conexões mais recentes.
-            connections = connections.slice(0, 5);
             
-            // Salva de volta no localStorage.
-            localStorage.setItem('flexsimConnections', JSON.stringify(connections));
-            
-            // Atualiza os botões na tela.
-            loadAndDisplaySavedConnections();
-        }
-
-        function loadAndDisplaySavedConnections() {
-            const container = document.getElementById('saved-connections-container');
-            const connections = JSON.parse(localStorage.getItem('flexsimConnections')) || [];
-            
-            // Limpa os botões antigos, exceto o <small>
-            container.innerHTML = '<small>Acesso Rápido:</small>';
-            
-            connections.forEach(conn => {
-                const btn = document.createElement('button');
-                btn.className = 'saved-connection-btn';
-                btn.textContent = conn.name;
-                btn.onclick = () => fillConnectionForm(conn.data);
-                container.appendChild(btn);
-            });
-        }
-
-        function fillConnectionForm(credentials) {
-            document.getElementById('dbUser').value = credentials.user;
-            document.getElementById('dbHost').value = credentials.host;
-            document.getElementById('dbDatabase').value = credentials.database;
-            document.getElementById('dbPassword').value = credentials.password;
-            document.getElementById('dbPort').value = credentials.port;
-            document.getElementById('dbTables').value = credentials.tables;
+            // Convert newlines to breaks if not already handled by HTML structure
+            return processedText.replace(/\n/g, '<br>');
         }
     </script>
 </body>
